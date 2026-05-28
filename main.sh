@@ -107,7 +107,7 @@ for DATASET_DIR in "${DATASET_FOLDERS[@]}"; do
         --data        "$DATA_FILE"   \
         --interp_root "$RESULTS_DIR" \
         --num_images  20             \
-        > "$DS_LOG" 2>&1
+        
 
     EXIT_CODE=$?
 
