@@ -921,46 +921,7 @@ num_saved, save_dir = save_sample_images(
     cae, test_synchronized_loader, file_name, num_classes, NUM_IMAGES_TO_SAVE
 )
 
-#######################################################
-# Calculate interpretability (True Dual SHAP)
-#######################################################
-print("\n" + "="*70)
-print("CALCULATING INTERPRETABILITY (Dual SHAP)")
-print("="*70)
 
-# Define required variables
-
-index = "0"  # Default index (or get from args if you add it)
-
-try:
-    shap_results = calculate_dual_shap_interpretability(
-        model=cae,
-        test_loader=test_synchronized_loader,
-        device=DEVICE,
-        n_features=n_cont_features,
-        num_classes=num_classes,
-        csv_name=csv_name,
-        index=index
-    )
-    
-    print("\n📊 Dual SHAP Feature Importance Summary:")
-    if 'dual_importance' in shap_results:
-        top_features = np.argsort(shap_results['dual_importance'])[::-1][:5]
-        print("\n   Top 5 Most Important Features:")
-        for i, feat_idx in enumerate(top_features, 1):
-            print(f"      {i}. Feature_{feat_idx}: {shap_results['dual_importance'][feat_idx]:.6f}")
-    
-    print("\n✅ Dual SHAP interpretability complete!")
-    
-except Exception as e:
-    print(f"\n❌ Dual SHAP calculation failed: {e}")
-    import traceback
-    traceback.print_exc()
-    print("[INFO] Continuing without interpretability...")
-
-print("="*70 + "\n")
-
-############# END Of Dual SHAP ##########
 
 
 # Output results as JSON to stdout (for batch script to capture)
