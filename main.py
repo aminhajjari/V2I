@@ -34,8 +34,7 @@ parser.add_argument('--save_dir', type=str, required=False, default=None,
                    help='Directory to save results (optional, for compatibility)')
 parser.add_argument('--num_images', type=int, default=20,
                    help='Number of sample images to save (default: 20)')
-parser.add_argument('--interp_root', type=str, default=None,  # 🆕 NEW
-                   help='Root directory for interpretability results (optional)')
+
 args = parser.parse_args()
 
 # ========== PARAMETERS ==========
@@ -45,17 +44,6 @@ NUM_IMAGES_TO_SAVE = min(args.num_images, 20)  # Cap at 20
 
 data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
-
-# 🆕 NEW SECTION STARTS HERE
-if args.interp_root is not None:
-    INTERP_ROOT = args.interp_root
-    os.makedirs(INTERP_ROOT, exist_ok=True)
-    csv_name = os.path.join(INTERP_ROOT, file_name)
-    print(f"[INFO] Interpretability results will be saved to: {csv_name}/dual_shap_interpretability/")
-else:
-    csv_name = file_name
-    print(f"[INFO] Interpretability results will be saved to: {file_name}/dual_shap_interpretability/")
-# 🆕 NEW SECTION ENDS HERE
 
 DATASET_ROOT = "/project/def-arashmoh/shahab33/Msc/datasets"
  
