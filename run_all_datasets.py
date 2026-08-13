@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Batch processor for Table2Image-VIF across all OpenML datasets
-Enhanced with Weight Decay + Dual SHAP Interpretability
+Enhanced with Weight Decay 
 """
 
 import os
@@ -28,7 +28,7 @@ def create_output_structure(base_output_dir, job_id):
         'csv': os.path.join(run_dir, 'csv'),
         'latex': os.path.join(run_dir, 'latex'),
         'logs': os.path.join(run_dir, 'logs'),
-        'interpretability': os.path.join(run_dir, 'interpretability')  # 🆕 Centralized SHAP
+        
     }
     
     for subdir in subdirs.values():
@@ -43,13 +43,11 @@ def create_output_structure(base_output_dir, job_id):
         f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"\nConfiguration:\n")
         f.write(f"  - Weight Decay: 1e-4 (AdamW optimizer)\n")
-        f.write(f"  - Dual SHAP Interpretability: Enabled\n")
         f.write(f"  - Model Saving: Disabled\n")
         f.write(f"\nFolder Structure:\n")
         f.write(f"  csv/              - Results in CSV format\n")
         f.write(f"  latex/            - LaTeX tables for paper\n")
         f.write(f"  logs/             - Processing logs (JSONL format)\n")
-        f.write(f"  interpretability/ - Dual SHAP outputs (9 files per dataset)\n")
         f.write(f"\nImages saved to: /project/def-arashmoh/shahab33/Msc/Tab2Vis/imageout/\n")
     
     return run_dir, subdirs
