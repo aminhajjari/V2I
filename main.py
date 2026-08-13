@@ -627,7 +627,7 @@ if cols_to_drop:
 if df.shape[1] <= 1:
     raise ValueError("All feature columns were dropped. Dataset unusable.")
 
-if not pd.api.types.is_numeric_dtype(df[target_col]):
+if df[target_col].dtype == 'object' or not np.issubdtype(df[target_col].dtype, np.number):
     print(f"[INFO] Converting labels to integers...")
     le_target = LabelEncoder()
     y = le_target.fit_transform(df[target_col].astype(str))
