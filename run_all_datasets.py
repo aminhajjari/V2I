@@ -106,7 +106,6 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
         'python', script_path,
         '--data', str(dataset_path),
         '--num_images', num_images,
-        '--interp_root', subdirs['interpretability']
     ]
 
     start_time = time.time()
