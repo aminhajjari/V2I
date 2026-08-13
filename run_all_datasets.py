@@ -77,46 +77,11 @@ def find_datasets(datasets_dir):
     
     return dataset_files
 
-def validate_interpretability_files(dataset_name, interp_root):
-    """
-    🆕 Validate that all 9 dual SHAP files are present
-    """
-    interp_dir = os.path.join(interp_root, dataset_name, 'dual_shap_interpretability')
-    
-    if not os.path.exists(interp_dir):
-        return False, 0, "Directory not found"
-    
-    expected_files = {
-        'csv': 3,  # dual_shap_summary, shap_tab2img, shap_tab2tab
-        'png': 3,  # importance plots
-        'npy': 2,  # raw SHAP arrays
-        'txt': 1   # report
-    }
-    
-    actual_counts = {
-        'csv': len(list(Path(interp_dir).glob('*.csv'))),
-        'png': len(list(Path(interp_dir).glob('*.png'))),
-        'npy': len(list(Path(interp_dir).glob('*.npy'))),
-        'txt': len(list(Path(interp_dir).glob('*.txt')))
-    }
-    
-    total_files = sum(actual_counts.values())
-    expected_total = sum(expected_files.values())
-    
-    is_complete = (actual_counts == expected_files)
-    
-    if is_complete:
-        return True, total_files, "Complete"
-    else:
-        missing = []
-        for ext, expected in expected_files.items():
-            if actual_counts[ext] < expected:
-                missing.append(f"{ext}:{actual_counts[ext]}/{expected}")
-        return False, total_files, f"Missing: {', '.join(missing)}"
+
 
 def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     """
-    Run Table2Image-VIF on a single dataset with interpretability
+    Run Table2Image-VIF on a single dataset
     """
     dataset_name = dataset_path.parent.name
 
@@ -125,7 +90,6 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
-    #print(f"Features: Weight Decay (1e-4) + Dual SHAP Interpretability")
 
     # --- per‑dataset overrides (CIFAR‑10 special case) ---
     effective_timeout = timeout
