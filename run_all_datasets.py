@@ -136,25 +136,13 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
             except Exception as e:
                 print(f"⚠️  Could not parse results: {e}")
             
-            # 🆕 Validate interpretability files
-            is_complete, file_count, status = validate_interpretability_files(
-                dataset_name, 
-                subdirs['interpretability']
-            )
             
-            if is_complete:
-                print(f"✅ Interpretability: {file_count}/9 files complete")
-            else:
-                print(f"⚠️  Interpretability: {file_count}/9 files ({status})")
             
             return {
                 'status': 'success',
                 'dataset': dataset_name,
                 'elapsed_time': elapsed,
                 'results': results_data,
-                'interpretability_complete': is_complete,
-                'interpretability_files': file_count,
-                'interpretability_status': status,
                 'stdout': result.stdout,
                 'stderr': result.stderr
             }
@@ -253,7 +241,8 @@ def create_summary_tables(df, subdirs, run_dir):
             'Average Accuracy', 'Std Accuracy', 'Average AUC', 'Std AUC',
             'Best Accuracy', 'Worst Accuracy', 'Median Accuracy',
             'Datasets >90%', 'Datasets >95%', 'Datasets >99%',
-            'Configuration', 'Weight Decay', 'Interpretability'
+            'Configuration', 'Weight Decay'
+            
         ],
         'Value': [
             f"{avg_accuracy:.2f}",
@@ -280,7 +269,7 @@ def create_summary_tables(df, subdirs, run_dir):
     latex_path = os.path.join(subdirs['latex'], 'results_latex.txt')
     with open(latex_path, 'w') as f:
         f.write("% LaTeX Table for Paper - Table2Image-VIF Results\n")
-        f.write("% With Weight Decay (1e-4) + Dual SHAP Interpretability\n\n")
+        f.write("% With Weight Decay (1e-4)\n\n")
         
         f.write("\\begin{table}[htbp]\n")
         f.write("\\centering\n")
@@ -320,30 +309,11 @@ def create_summary_tables(df, subdirs, run_dir):
         # 🆕 Add note about robustness
         f.write("\n% Note: Results obtained with:\n")
         f.write("% - Weight decay (lambda=1e-4) for improved generalization\n")
-        f.write("% - Dual SHAP interpretability for cross-modal and within-modal feature importance\n")
+        
     
     print(f"✅ LaTeX table: {latex_path}")
     
-    # ========== 5. 🆕 INTERPRETABILITY SUMMARY ==========
-    interp_summary_path = os.path.join(subdirs['csv'], 'interpretability_summary.csv')
-    
-    # Check interpretability completion
-    interp_data = []
-    for dataset_name in summary_df['dataset']:
-        is_complete, file_count, status = validate_interpretability_files(
-            dataset_name,
-            subdirs['interpretability']
-        )
-        interp_data.append({
-            'dataset': dataset_name,
-            'complete': is_complete,
-            'file_count': file_count,
-            'status': status
-        })
-    
-    interp_df = pd.DataFrame(interp_data)
-    interp_df.to_csv(interp_summary_path, index=False)
-    print(f"✅ Interpretability summary: {interp_summary_path}")
+
     
     complete_count = sum(interp_df['complete'])
     print(f"   📊 {complete_count}/{len(interp_df)} datasets have complete interpretability files")
@@ -364,7 +334,7 @@ def create_summary_tables(df, subdirs, run_dir):
     print(f"Datasets with >95% accuracy: {len(summary_df[summary_df['best_accuracy'] > 95])}")
     print(f"Datasets with >99% accuracy: {len(summary_df[summary_df['best_accuracy'] > 99])}")
     print(f"")
-    print(f"🔍 Interpretability: {complete_count}/{len(summary_df)} datasets complete")
+    
     print(f"{'='*70}\n")
     
     # Update README with final results
@@ -376,11 +346,11 @@ def create_summary_tables(df, subdirs, run_dir):
         f.write(f"Datasets processed: {len(summary_df)}\n")
         f.write(f"Average Accuracy: {avg_accuracy:.2f}% ± {std_accuracy:.2f}%\n")
         f.write(f"Average AUC: {avg_auc:.4f} ± {std_auc:.4f}\n")
-        f.write(f"Interpretability Complete: {complete_count}/{len(summary_df)}\n")
+        
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Batch process all OpenML datasets with Table2Image-VIF + Interpretability'
+        description='Batch process all OpenML datasets with Table2Image-VIF'
     )
     parser.add_argument('--datasets_dir', type=str, required=True,
                         help='Directory containing dataset folders')
@@ -400,14 +370,13 @@ def main():
     # Create organized output structure
     print(f"{'='*70}")
     print(f"TABLE2IMAGE-VIF BATCH PROCESSOR")
-    print(f"Configuration: Weight Decay (1e-4) + Dual SHAP Interpretability")
+    print(f"Configuration: Weight Decay (1e-4) ")
     print(f"{'='*70}")
     run_dir, subdirs = create_output_structure(args.output_base, args.job_id)
     print(f"Output directory: {run_dir}")
     print(f"  📊 csv/              → {subdirs['csv']}")
     print(f"  📄 latex/            → {subdirs['latex']}")
     print(f"  📝 logs/             → {subdirs['logs']}")
-    print(f"  🔍 interpretability/ → {subdirs['interpretability']}")
     print(f"{'='*70}\n")
     
     # Find all datasets
