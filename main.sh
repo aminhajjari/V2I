@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #=======================================================================
-# PRODUCTION SLURM SCRIPT - 80 Datasets with Weight Decay + Interpretability
+# PRODUCTION SLURM SCRIPT - 80 Datasets with Weight Decay 
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -44,7 +44,6 @@ echo "Node: $(hostname)"
 echo "Datasets dir: $DATASETS_DIR"
 echo "Configuration:"
 echo "  - Weight Decay: 1e-4 (AdamW)"
-echo "  - Dual SHAP Interpretability: Enabled"
 echo "  - Timeout: 4 hours per dataset"
 echo "  - CPUs: 8 cores"
 echo "  - Memory: 64GB"
@@ -116,10 +115,9 @@ echo ""
 echo "Python environment:"
 python --version
 python -c "
-import torch, shap
+import torch
 print(f'PyTorch: {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
-print(f'SHAP: {shap.__version__}')
 if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
 "
@@ -151,8 +149,6 @@ echo "=========================================="
 echo "🚀 STARTING BATCH PROCESSING"
 echo "=========================================="
 echo "Using updated run_all_datasets.py with:"
-echo "  ✅ Centralized interpretability (--interp_root)"
-echo "  ✅ SHAP file validation (9 files/dataset)"
 echo "  ✅ Weight decay documentation"
 echo "  ✅ Enhanced statistics"
 echo ""
@@ -199,22 +195,13 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "📊 Files generated:"
     echo "    ├── csv/"
     echo "    │   ├── results_summary.csv"
-    echo "    │   ├── statistics.csv"
-    echo "    │   └── interpretability_summary.csv"
+    echo "    │   └── statistics.csv"
     echo "    ├── latex/"
     echo "    │   └── results_latex.txt"
-    echo "    ├── logs/"
-    echo "    │   └── results.jsonl"
-    echo "    └── interpretability/"
-    echo "        ├── balance-scale/dual_shap_interpretability/"
-    echo "        ├── tic-tac-toe/dual_shap_interpretability/"
-    echo "        └── ... ($DATASET_COUNT datasets total)"
+    echo "    └── logs/"
+    echo "        └── results.jsonl"
     echo ""
     
-    if [ -d "$RESULT_DIR/interpretability" ]; then
-        INTERP_COUNT=$(find "$RESULT_DIR/interpretability" -type d -name "dual_shap_interpretability" | wc -l)
-        echo "🔍 Interpretability outputs: $INTERP_COUNT/$DATASET_COUNT datasets"
-    fi
     
     if [ -f "$RESULT_DIR/csv/statistics.csv" ]; then
         echo "📊 Quick Statistics:"
