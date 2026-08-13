@@ -1,148 +1,236 @@
 #!/bin/bash
+
 #=======================================================================
-# SLURM - Table2Image (T2I) on ALL Tabular Datasets
+# PRODUCTION SLURM SCRIPT - 80 Datasets with Weight Decay + Interpretability
 #=======================================================================
+
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=T2I_All_Datasets
+#SBATCH --job-name=T2I_VIF_PROD
 #SBATCH --nodes=1
-#SBATCH --gpus-per-node=h100:1
-#SBATCH --cpus-per-task=10
-#SBATCH --mem=80G
-#SBATCH --time=72:00:00
+#SBATCH --gpus-per-node=a100:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=96:00:00
+
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2Vis/job_logs/production_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2Vis/job_logs/production_%A.err
+
+#SBATCH --mail-user=aminhajjr@gmail.com
+#SBATCH --mail-type=BEGIN,END,FAIL
+
 #=======================================================================
-#SBATCH --output=/home/gkianfar/scratch/Amin/T2I/outputs/logs/t2i_%A.out
-#SBATCH --error=/home/gkianfar/scratch/Amin/T2I/outputs/logs/t2i_%A.err
+# Configuration
 #=======================================================================
+PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
+TAB2IMG_DIR="$PROJECT_DIR/Tab2Vis"
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
+BATCH_SCRIPT="$TAB2IMG_DIR/run_all_datasets.py"
+MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
+RESULTS_BASE="$TAB2IMG_DIR/results"
+JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
 
-BASE_T2I="/home/gkianfar/scratch/Amin/T2I"
-BASE_TAB2VIS="/home/gkianfar/scratch/Amin/Tab2Vis"
+TIMEOUT_DEFAULT=14400  # 4 hours (safe for most datasets)
 
-DATASETS_DIR="$BASE_TAB2VIS/Unzippeddata/CSV"
-OUTPUTS_DIR="$BASE_T2I/outputs"
-LOGS_DIR="$OUTPUTS_DIR/logs"
-RESULTS_DIR="$OUTPUTS_DIR/resualt"
+#=======================================================================
+# Job Information
+#=======================================================================
+echo "=========================================="
+echo "TABLE2IMAGE-VIF PRODUCTION RUN"
+echo "=========================================="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Started: $(date)"
+echo "Node: $(hostname)"
+echo "Datasets dir: $DATASETS_DIR"
+echo "Configuration:"
+echo "  - Weight Decay: 1e-4 (AdamW)"
+echo "  - Dual SHAP Interpretability: Enabled"
+echo "  - Timeout: 4 hours per dataset"
+echo "  - CPUs: 8 cores"
+echo "  - Memory: 64GB"
+echo "=========================================="
+echo ""
 
-MAIN_SCRIPT="$BASE_T2I/V2I/main.py"
-VENV_PATH="$BASE_TAB2VIS/venvMsc/bin/activate"
+#=======================================================================
+# GPU Information
+#=======================================================================
+echo "GPU Information:"
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+echo ""
 
-TIMEOUT_PER_DATASET=21600                # 6 hours per dataset
+#=======================================================================
+# Setup
+#=======================================================================
+echo "Creating directories..."
+mkdir -p "$JOB_LOGS_DIR"
+mkdir -p "$RESULTS_BASE"
+echo "✅ Directories ready"
+echo ""
 
-echo "=========================================================="
-echo "  TABLE2IMAGE - Full Dataset Run"
-echo "=========================================================="
-echo "  Job ID   : $SLURM_JOB_ID"
-echo "  Node     : $SLURMD_NODENAME"
-echo "  Started  : $(date)"
-echo "  Datasets : $DATASETS_DIR"
-echo "  Results  : $RESULTS_DIR"
-echo "  Timeout  : ${TIMEOUT_PER_DATASET}s per dataset"
-echo "=========================================================="
+#=======================================================================
+# Verify Files
+#=======================================================================
+echo "Verifying environment..."
 
-# Setup directories
-mkdir -p "$LOGS_DIR"
-mkdir -p "$RESULTS_DIR"
-
-# Dataset check
 if [ ! -d "$DATASETS_DIR" ]; then
-    echo "❌ Dataset directory not found: $DATASETS_DIR"
+    echo "❌ ERROR: Datasets not found: $DATASETS_DIR"
+    ls -la "$PROJECT_DIR" | grep -i tabular
+    exit 1
+fi
+
+if [ ! -f "$BATCH_SCRIPT" ]; then
+    echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
     exit 1
 fi
 
 if [ ! -f "$MAIN_SCRIPT" ]; then
-    echo "❌ main.py not found: $MAIN_SCRIPT"
+    echo "❌ ERROR: Main script not found: $MAIN_SCRIPT"
     exit 1
 fi
 
-# Modules + env
+if [ ! -f "$VENV_PATH" ]; then
+    echo "❌ ERROR: Virtual env not found: $VENV_PATH"
+    exit 1
+fi
+
+DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
+echo "✅ Found $DATASET_COUNT dataset folders"
+echo ""
+
+#=======================================================================
+# Load Environment
+#=======================================================================
+echo "Loading modules..."
 module purge
 module load StdEnv/2023
 module load python/3.11
 module load cuda/12.2
+echo "✅ Modules loaded"
+echo ""
 
+echo "Activating virtual environment..."
 source "$VENV_PATH"
+echo "✅ Virtual environment active"
+echo ""
 
-echo "Python version:"
+echo "Python environment:"
 python --version
+python -c "
+import torch, shap
+print(f'PyTorch: {torch.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+print(f'SHAP: {shap.__version__}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+"
 
-DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
-echo "✅ Found $DATASET_COUNT dataset folders"
+if [ $? -ne 0 ]; then
+    echo "❌ ERROR: Environment check failed!"
+    exit 1
+fi
+
+echo "✅ Environment ready"
+echo ""
 
 #=======================================================================
-# Tracking counters
+# Verify Weight Decay in Code
 #=======================================================================
-SUCCESS=0
-FAILED=0
-SKIPPED=0
-FAILED_LIST=()
+echo "Verifying weight decay configuration..."
+if grep -q "weight_decay=1e-4" "$MAIN_SCRIPT"; then
+    echo "✅ Weight decay (1e-4) confirmed in run_vif.py"
+else
+    echo "⚠️  WARNING: weight_decay not found in run_vif.py"
+    echo "   Make sure it's configured correctly!"
+fi
+echo ""
 
 #=======================================================================
-# Main loop
+# Execute Batch Processing
 #=======================================================================
-echo "🚀 Starting full training on all datasets..."
+echo "=========================================="
+echo "🚀 STARTING BATCH PROCESSING"
+echo "=========================================="
+echo "Using updated run_all_datasets.py with:"
+echo "  ✅ Centralized interpretability (--interp_root)"
+echo "  ✅ SHAP file validation (9 files/dataset)"
+echo "  ✅ Weight decay documentation"
+echo "  ✅ Enhanced statistics"
+echo ""
+echo "Running command:"
+echo "python $BATCH_SCRIPT \\"
+echo "  --datasets_dir $DATASETS_DIR \\"
+echo "  --output_base $RESULTS_BASE \\"
+echo "  --job_id $SLURM_JOB_ID \\"
+echo "  --script_path $MAIN_SCRIPT \\"
+echo "  --timeout $TIMEOUT_DEFAULT"
+echo ""
+echo "=========================================="
+echo ""
 
-for DATASET_DIR in $(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | sort); do
+# Run the batch processor
+python "$BATCH_SCRIPT" \
+    --datasets_dir "$DATASETS_DIR" \
+    --output_base "$RESULTS_BASE" \
+    --job_id "$SLURM_JOB_ID" \
+    --script_path "$MAIN_SCRIPT" \
+    --timeout "$TIMEOUT_DEFAULT"
 
-    DATASET_NAME=$(basename "$DATASET_DIR")
-    DATA_FILE=$(find "$DATASET_DIR" -maxdepth 1 -type f \( -iname "*.csv" -o -iname "*.arff" -o -iname "*.data" \) | head -n 1)
-
-    if [ -z "$DATA_FILE" ]; then
-        echo "⚠️  [$DATASET_NAME] No data file found — skipping"
-        SKIPPED=$((SKIPPED + 1))
-        continue
-    fi
-
-    echo "----------------------------------------------------------"
-    echo "▶  Dataset : $DATASET_NAME"
-    echo "   File    : $DATA_FILE"
-    echo "   Time    : $(date)"
-    echo "----------------------------------------------------------"
-
-    timeout "$TIMEOUT_PER_DATASET" python "$MAIN_SCRIPT" \
-        --data        "$DATA_FILE"   \
-        --interp_root "$RESULTS_DIR" \
-        --num_images  20
-
-    EXIT_CODE=$?
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        echo "   ✅ Done  (exit 0)"
-        SUCCESS=$((SUCCESS + 1))
-    elif [ $EXIT_CODE -eq 124 ]; then
-        echo "   ⏰ TIMEOUT after ${TIMEOUT_PER_DATASET}s"
-        FAILED=$((FAILED + 1))
-        FAILED_LIST+=("$DATASET_NAME (timeout)")
-    else
-        echo "   ❌ FAILED (exit $EXIT_CODE)"
-        FAILED=$((FAILED + 1))
-        FAILED_LIST+=("$DATASET_NAME (exit $EXIT_CODE)")
-    fi
-
-done
+EXIT_CODE=$?
 
 #=======================================================================
 # Final Summary
 #=======================================================================
 echo ""
-echo "=========================================================="
-echo "  FINAL SUMMARY"
-echo "=========================================================="
-echo "  Total datasets : $((SUCCESS + FAILED + SKIPPED))"
-echo "  ✅ Succeeded   : $SUCCESS"
-echo "  ❌ Failed      : $FAILED"
-echo "  ⚠️  Skipped    : $SKIPPED"
-echo "  Finished       : $(date)"
-echo "=========================================================="
+echo "=========================================="
+echo "PRODUCTION RUN COMPLETE"
+echo "=========================================="
+echo "Finished: $(date)"
+echo "Exit code: $EXIT_CODE"
+echo ""
 
-if [ ${#FAILED_LIST[@]} -gt 0 ]; then
+if [ $EXIT_CODE -eq 0 ]; then
+    RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
+    
+    echo "✅ SUCCESS!"
     echo ""
-    echo "  Failed datasets:"
-    for ITEM in "${FAILED_LIST[@]}"; do
-        echo "    - $ITEM"
-    done
+    echo "📂 Results location:"
+    echo "    $RESULT_DIR/"
+    echo ""
+    echo "📊 Files generated:"
+    echo "    ├── csv/"
+    echo "    │   ├── results_summary.csv"
+    echo "    │   ├── statistics.csv"
+    echo "    │   └── interpretability_summary.csv"
+    echo "    ├── latex/"
+    echo "    │   └── results_latex.txt"
+    echo "    ├── logs/"
+    echo "    │   └── results.jsonl"
+    echo "    └── interpretability/"
+    echo "        ├── balance-scale/dual_shap_interpretability/"
+    echo "        ├── tic-tac-toe/dual_shap_interpretability/"
+    echo "        └── ... ($DATASET_COUNT datasets total)"
+    echo ""
+    
+    if [ -d "$RESULT_DIR/interpretability" ]; then
+        INTERP_COUNT=$(find "$RESULT_DIR/interpretability" -type d -name "dual_shap_interpretability" | wc -l)
+        echo "🔍 Interpretability outputs: $INTERP_COUNT/$DATASET_COUNT datasets"
+    fi
+    
+    if [ -f "$RESULT_DIR/csv/statistics.csv" ]; then
+        echo "📊 Quick Statistics:"
+        grep "Average Accuracy" "$RESULT_DIR/csv/statistics.csv" | head -1
+        grep "Datasets >90%" "$RESULT_DIR/csv/statistics.csv" | head -1
+    fi
+    
+    echo "📧 Completion email sent to: aminhajjr@gmail.com"
+    echo "🎉 All $DATASET_COUNT datasets processed!"
+    
+else
+    echo "⚠️  Some datasets may have failed"
+    echo "Check logs:"
+    echo "    Output: $JOB_LOGS_DIR/production_${SLURM_JOB_ID}.out"
+    echo "    Error:  $JOB_LOGS_DIR/production_${SLURM_JOB_ID}.err"
 fi
 
-echo ""
-echo "  Results : $RESULTS_DIR/"
-echo "=========================================================="
-
-[ $FAILED -eq 0 ] && exit 0 || exit 1
+echo "=========================================="
+exit $EXIT_CODE
