@@ -315,8 +315,7 @@ def create_summary_tables(df, subdirs, run_dir):
     
 
     
-    complete_count = sum(interp_df['complete'])
-    print(f"   📊 {complete_count}/{len(interp_df)} datasets have complete interpretability files")
+    
     
     # ========== 6. PRINT SUMMARY ==========
     print(f"\n{'='*70}")
