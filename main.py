@@ -45,7 +45,7 @@ NUM_IMAGES_TO_SAVE = min(args.num_images, 20)  # Cap at 20
 data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 
-DATASET_ROOT = "/project/def-arashmoh/shahab33/Msc/datasets"
+DATASET_ROOT = "/home/gkianfar/scratch/Amin/ICC/Unzippeddata/Image"
  
 
 
