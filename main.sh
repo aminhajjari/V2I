@@ -15,8 +15,6 @@
 #SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/production_%A.out
 #SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/production_%A.err
 
-#SBATCH --mail-user=aminhajjr@gmail.com
-#SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
 # Configuration
@@ -31,7 +29,7 @@ DATASETS_DIR="$PROJECT_DIR/Unzippeddata/CSV"
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 
 BATCH_SCRIPT="$TAB2IMG_DIR/run_all_datasets.py"
-MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
+MAIN_SCRIPT="$TAB2IMG_DIR/main.py"
 
 RESULTS_BASE="$PROJECT_DIR/output"
 
