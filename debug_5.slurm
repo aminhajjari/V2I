@@ -26,7 +26,7 @@ OUTPUT="$BASE/output/debug"
 
 VENV="$BASE/venvMsc/bin/activate"
 
-MAIN="$CODE/run_vif.py"
+MAIN="$CODE/main.py"
 RUN="$CODE/run_all_datasets.py"
 
 TIMEOUT=14400
