@@ -256,8 +256,8 @@ def create_summary_tables(df, subdirs, run_dir):
             len(summary_df[summary_df['best_accuracy'] > 95]),
             len(summary_df[summary_df['best_accuracy'] > 99]),
             'AdamW + VIF Initialization',
-            '1e-4',
-            'Dual SHAP (9 files/dataset)'
+            '1e-4'
+            
         ]
     }
     stats_df = pd.DataFrame(stats_data)
