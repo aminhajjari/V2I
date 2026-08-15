@@ -24,7 +24,7 @@ import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
 from adopt import ADOPT 
-
+import math
 
 # ========== ARGUMENT PARSER ==========
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
