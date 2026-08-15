@@ -6,6 +6,7 @@
 
 #SBATCH --account=def-arashmoh
 #SBATCH --job-name=T2I_VIF_PROD
+#SBATCH --partition=gpubase_bynode_b5
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=a100:1
 #SBATCH --cpus-per-task=8
