@@ -693,25 +693,29 @@ print(f"       Configuration: C={num_classes} classes, N={n_cont_features} featu
 if num_classes == 2 and n_cont_features == 78:
     print(f"       ✓ Matches Table 2 specs (Expected: ~627.6K)")
 #############################################
-def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels):
-    BCE = F.mse_loss(recon_x, x)
+def diffusion_loss_function(predicted_noise, noise, tab_pred, tab_labels):
+    noise_loss = F.mse_loss(predicted_noise, noise)
     tab_loss = F.cross_entropy(tab_pred, tab_labels)
-    img_loss = F.cross_entropy(img_pred, img_labels)
-    return BCE + tab_loss + img_loss
+    return noise_loss + tab_loss
+
+def normalize_img(x):
+    return x * 2 - 1  # [0,1] -> [-1,1], standard diffusion target range
+
+def denormalize_img(x):
+    return (x.clamp(-1, 1) + 1) / 2  # [-1,1] -> [0,1] for display/saving
 
 def train(model, train_data_loader, optimizer, epoch):
     model.train()
     train_loss = 0
     for tab_data, tab_label, img_data, img_label in train_data_loader:
-        img_data = img_data.view(-1, 28*28).to(DEVICE)
+        # keep image as (B,1,28,28) for the conv UNet -- do NOT flatten
+        img_data = normalize_img(img_data.to(DEVICE))
         tab_data = tab_data.to(DEVICE)
-        img_label = img_label.to(DEVICE).long()
         tab_label = tab_label.to(DEVICE).long()
+
         optimizer.zero_grad()
-        random_array = np.random.rand(img_data.shape[0], 28*28)
-        x_rand = torch.Tensor(random_array).to(DEVICE)
-        recon_x, tab_pred, img_pred = model(x_rand, tab_data)
-        loss = loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label)
+        predicted_noise, noise, tab_pred = model(img_data, tab_data, tab_label)
+        loss = diffusion_loss_function(predicted_noise, noise, tab_pred, tab_label)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
@@ -728,14 +732,18 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
 
     with torch.no_grad():
         for tab_data, tab_label, img_data, img_label in test_data_loader:
-            img_data = img_data.view(-1, 28*28).to(DEVICE)
+            img_data = img_data.to(DEVICE)
+            img_data_norm = normalize_img(img_data)
             tab_data = tab_data.to(DEVICE)
             img_label = img_label.to(DEVICE).long()
             tab_label = tab_label.to(DEVICE).long()
-            random_array = np.random.rand(img_data.shape[0], 28*28)
-            x_rand = torch.Tensor(random_array).view(-1, 28*28).to(DEVICE)
-            recon_x, tab_pred, img_pred = model(x_rand, tab_data)
-            test_loss += loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label).item()
+
+            # cheap: noise-prediction loss, matches the training objective
+            predicted_noise, noise, tab_pred = model(img_data_norm, tab_data, tab_label, cond_drop_prob=0.0)
+            test_loss += (F.mse_loss(predicted_noise, noise) + F.cross_entropy(tab_pred, tab_label)).item()
+
+            # expensive: full reverse-diffusion generation, needed for img_pred/img_accuracy
+            gen_x, _, img_pred = model.sample(tab_data, tab_label, num_steps=50, guidance_scale=2.0)
             tab_probs = F.softmax(tab_pred, dim=1)
             img_probs = F.softmax(img_pred, dim=1)
             all_tab_labels.extend(tab_label.cpu().numpy())
@@ -814,23 +822,22 @@ def save_sample_images(model, test_data_loader, dataset_name, num_classes, num_i
             if all(len(samples) >= samples_per_class for samples in class_samples.values()):
                 break
                 
-            img_data_flat = img_data.view(-1, 28*28).to(DEVICE)
             tab_data = tab_data.to(DEVICE)
-            
-            # Generate reconstructed images
-            random_array = np.random.rand(img_data_flat.shape[0], 28*28)
-            x_rand = torch.Tensor(random_array).to(DEVICE)
-            recon_x, _, _ = model(x_rand, tab_data)
-            
+            tab_label_dev = tab_label.to(DEVICE).long()
+
+            # Generate images via the diffusion model's reverse (denoising) process
+            gen_x, _, _ = model.sample(tab_data, tab_label_dev, num_steps=50, guidance_scale=2.0)
+            gen_x = denormalize_img(gen_x)  # back to [0,1] for imshow/imsave
+
             # Store samples by class
             for i in range(len(tab_label)):
                 label = tab_label[i].item()
-                
+
                 # Only collect if we need more samples for this class
                 if len(class_samples[label]) < samples_per_class:
                     class_samples[label].append({
                         'original': img_data[i].cpu().numpy(),
-                        'reconstructed': recon_x[i].cpu().numpy().reshape(28, 28),
+                        'reconstructed': gen_x[i].squeeze(0).cpu().numpy(),
                         'label': label
                     })
     
