@@ -8,8 +8,8 @@
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
 
-#SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/debug_%A.out
-#SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/debug_%A.err
+#SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/logs/debug_%A.out
+#SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/logs/debug_%A.err
 
 
 
