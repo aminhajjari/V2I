@@ -254,7 +254,7 @@ if num_classes < 2:
 X_df = df.drop(columns=[target_col])
 print(f"[INFO] Encoding categorical features...")
 for col in X_df.columns:
-    if X_df[col].dtype == 'object':
+    if not pd.api.types.is_numeric_dtype(X_df[col]):
         le = LabelEncoder()
         X_df[col] = le.fit_transform(X_df[col].astype(str))
     else:
