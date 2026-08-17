@@ -415,25 +415,50 @@ test_synchronized_loader = DataLoader(test_synchronized_dataset, batch_size=BATC
 print(f"[INFO] Synchronized datasets created. Train batches: {len(train_synchronized_loader)}")
 
 # ========== MODEL DEFINITIONS ==========
-class SimpleCNN(nn.Module):
-    def __init__(self, num_classes):
-        super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.fc1 = nn.Linear(64 * 7 * 7, 128)
-        self.fc2 = nn.Linear(128, num_classes)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
-    def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.pool(x)
-        x = self.relu(self.conv2(x))
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.dropout(self.relu(self.fc1(x)))
-        x = self.fc2(x)
+# ========== MODEL DEFINITIONS ==========
+class CLIPImageClassifier(nn.Module):
+    """
+    Drop-in replacement for SimpleCNN. Same input contract: (B,1,28,28)
+    in [-1,1] -> (B, num_classes) logits.
+    """
+    def __init__(self, num_classes, clip_model_path=CLIP_MODEL_PATH,
+                 device=DEVICE, freeze_clip=True):
+        super().__init__()
+        self.freeze_clip = freeze_clip
+        clip_model, _ = clip.load(clip_model_path, device=device, jit=False)
+        self.clip_model = clip_model.float()
+
+        if freeze_clip:
+            for p in self.clip_model.parameters():
+                p.requires_grad = False
+            self.clip_model.eval()
+
+        embed_dim = self.clip_model.visual.output_dim  # 512 for ViT-B/32
+        self.classifier_head = nn.Linear(embed_dim, num_classes)
+
+        self.register_buffer('clip_mean',
+            torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
+        self.register_buffer('clip_std',
+            torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
+
+    def _preprocess(self, x):
+        x = (x.clamp(-1, 1) + 1) / 2
+        x = x.repeat(1, 3, 1, 1)
+        x = F.interpolate(x, size=224, mode='bicubic', align_corners=False)
+        x = (x - self.clip_mean) / self.clip_std
         return x
+
+    def forward(self, x):
+        x = self._preprocess(x)
+        if self.freeze_clip:
+            with torch.no_grad():
+                feats = self.clip_model.encode_image(x)
+        else:
+            feats = self.clip_model.encode_image(x)
+        feats = feats.float()
+        return self.classifier_head(feats)
+
+class SimpleMLP(nn.Module):
 
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, latent_dim, num_classes):
