@@ -25,8 +25,12 @@ import scipy.io.arff as arff
 from tqdm import tqdm
 from adopt import ADOPT 
 import math
-
+import sys
+import clip
 # ========== ARGUMENT PARSER ==========
+
+sys.path.append("/home/gkianfar/scratch/Amin/ICC/models/CLIP") 
+# __________________________________________
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
 parser.add_argument('--data', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
