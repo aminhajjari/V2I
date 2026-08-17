@@ -50,10 +50,7 @@ data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 
 DATASET_ROOT = "/home/gkianfar/scratch/Amin/ICC/Unzippeddata/Image"
- 
-
-
-
+CLIP_MODEL_PATH = "/home/gkianfar/scratch/Amin/ICC/models/CLIP/ViT-B-32.pt" 
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
