@@ -608,7 +608,7 @@ class TabularConditionalDiffusion(nn.Module):
         cond_dim = tab_latent_size + input_dim + class_emb_dim
 
         self.unet = TabularConditionalUNet(cond_dim=cond_dim, base_ch=base_ch)
-        self.final_classifier = SimpleCNN(num_classes=num_classes)
+        self.final_classifier = CLIPImageClassifier(num_classes=num_classes)
 
         self.timesteps = timesteps
         betas = torch.linspace(1e-4, 0.02, timesteps)
@@ -703,7 +703,11 @@ cae = TabularConditionalDiffusion(
 ).to(DEVICE)
 #optimizer = optim.AdamW(cae.parameters(), lr=0.001, weight_decay=1e-4)
 #optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True, weight_decay=1e-4)
-optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
+#optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
+optimizer = ADOPT(
+    filter(lambda p: p.requires_grad, cae.parameters()),
+    lr=0.001, decouple=True
+)
 
 print(f"[INFO] Model created with {sum(p.numel() for p in cae.parameters())} parameters")
 # ============================================================
