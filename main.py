@@ -460,8 +460,6 @@ class CLIPImageClassifier(nn.Module):
         return self.classifier_head(feats)
 
 class SimpleMLP(nn.Module):
-
-class SimpleMLP(nn.Module):
     def __init__(self, input_dim, latent_dim, num_classes):
         super(SimpleMLP, self).__init__()
         self.fc1 = nn.Linear(input_dim, latent_dim)
