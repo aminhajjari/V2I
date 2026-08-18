@@ -457,7 +457,6 @@ class CLIPImageClassifier(nn.Module):
         return self.classifier_head(feats)
 
 
-
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, latent_dim, num_classes):
         super(SimpleMLP, self).__init__()
@@ -507,7 +506,7 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(128, 28*28),
             nn.Sigmoid()
         )
-        self.final_classifier = CLIPImageClassifier(num_classes=num_classes)
+        self.final_classifier = CLIPZeroShotClassifier(num_classes=num_classes)
     def encode(self, x, tab_embedding, vif_embedding):
         return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
     def decode(self, z, tab_embedding, vif_embedding):
