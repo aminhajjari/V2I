@@ -5,14 +5,14 @@
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=T2I_VIF_PROD
+#SBATCH --job-name=V2I
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=96:00:00
 
-#SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/logs/debug_%A.out
+#SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/logs/V2Idebug_%A.out
 #SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/logs/debug_%A.err
 
 #=======================================================================
