@@ -533,7 +533,11 @@ cae = CAEWithTabEmbedding(
 ).to(DEVICE)
 #optimizer = optim.AdamW(cae.parameters(), lr=0.001, weight_decay=1e-4)
 #optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True, weight_decay=1e-4)
-optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
+#optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
+optimizer = ADOPT(
+    filter(lambda p: p.requires_grad, cae.parameters()),
+    lr=0.001, decouple=True
+)
 
 print(f"[INFO] Model created with {sum(p.numel() for p in cae.parameters())} parameters")
 # ============================================================
