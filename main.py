@@ -24,14 +24,11 @@ import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
 from adopt import ADOPT 
-import math
 import sys
-sys.path.append("/home/gkianfar/scratch/Amin/ICC/models/CLIP") 
+sys.path.append("/home/gkianfar/scratch/Amin/ICC/models/CLIP")
 import clip
+
 # ========== ARGUMENT PARSER ==========
-
-
-# __________________________________________
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
 parser.add_argument('--data', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
@@ -52,6 +49,7 @@ file_name = os.path.basename(os.path.dirname(data_path))
 
 DATASET_ROOT = "/home/gkianfar/scratch/Amin/ICC/Unzippeddata/Image"
 CLIP_MODEL_PATH = "/home/gkianfar/scratch/Amin/ICC/models/ViT-B-32.pt"
+
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
@@ -256,7 +254,7 @@ if num_classes < 2:
 X_df = df.drop(columns=[target_col])
 print(f"[INFO] Encoding categorical features...")
 for col in X_df.columns:
-    if not pd.api.types.is_numeric_dtype(X_df[col]):
+    if X_df[col].dtype == 'object':
         le = LabelEncoder()
         X_df[col] = le.fit_transform(X_df[col].astype(str))
     else:
@@ -416,48 +414,25 @@ test_synchronized_loader = DataLoader(test_synchronized_dataset, batch_size=BATC
 print(f"[INFO] Synchronized datasets created. Train batches: {len(train_synchronized_loader)}")
 
 # ========== MODEL DEFINITIONS ==========
-# ========== MODEL DEFINITIONS ==========
-class CLIPImageClassifier(nn.Module):
-    """
-    Drop-in replacement for SimpleCNN. Same input contract: (B,1,28,28)
-    in [-1,1] -> (B, num_classes) logits.
-    """
-    def __init__(self, num_classes, clip_model_path=CLIP_MODEL_PATH,
-                 device=DEVICE, freeze_clip=True):
-        super().__init__()
-        self.freeze_clip = freeze_clip
-        clip_model, _ = clip.load(clip_model_path, device=device, jit=False)
-        self.clip_model = clip_model.float()
-
-        if freeze_clip:
-            for p in self.clip_model.parameters():
-                p.requires_grad = False
-            self.clip_model.eval()
-
-        embed_dim = self.clip_model.visual.output_dim  # 512 for ViT-B/32
-        self.classifier_head = nn.Linear(embed_dim, num_classes)
-
-        self.register_buffer('clip_mean',
-            torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
-        self.register_buffer('clip_std',
-            torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
-
-    def _preprocess(self, x):
-        x = (x.clamp(-1, 1) + 1) / 2
-        x = x.repeat(1, 3, 1, 1)
-        x = F.interpolate(x, size=224, mode='bicubic', align_corners=False)
-        x = (x - self.clip_mean) / self.clip_std
-        return x
-
+class SimpleCNN(nn.Module):
+    def __init__(self, num_classes):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(64 * 7 * 7, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
     def forward(self, x):
-        x = self._preprocess(x)
-        if self.freeze_clip:
-            with torch.no_grad():
-                feats = self.clip_model.encode_image(x)
-        else:
-            feats = self.clip_model.encode_image(x)
-        feats = feats.float()
-        return self.classifier_head(feats)
+        x = self.relu(self.conv1(x))
+        x = self.pool(x)
+        x = self.relu(self.conv2(x))
+        x = self.pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.dropout(self.relu(self.fc1(x)))
+        x = self.fc2(x)
+        return x
 
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, latent_dim, num_classes):
@@ -489,224 +464,52 @@ class VIFInitialization(nn.Module):
         x = F.relu(self.fc2(x))
         return x
 
-class SinusoidalTimeEmbedding(nn.Module):
-    """Standard sinusoidal embedding for the diffusion timestep t."""
-    def __init__(self, dim):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, t):
-        device = t.device
-        half_dim = self.dim // 2
-        emb_scale = math.log(10000) / max(half_dim - 1, 1)
-        emb = torch.exp(torch.arange(half_dim, device=device) * -emb_scale)
-        emb = t.float()[:, None] * emb[None, :]
-        emb = torch.cat([emb.sin(), emb.cos()], dim=-1)
-        if self.dim % 2 == 1:
-            emb = F.pad(emb, (0, 1))
-        return emb
-
-
-class FiLMResBlock(nn.Module):
-    """Conv block that injects conditioning (time + tab + vif + class) via FiLM."""
-    def __init__(self, in_ch, out_ch, cond_dim):
-        super().__init__()
-        self.norm1 = nn.GroupNorm(8, in_ch)
-        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, padding=1)
-        self.norm2 = nn.GroupNorm(8, out_ch)
-        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1)
-        self.cond_proj = nn.Linear(cond_dim, out_ch * 2)
-        self.skip = nn.Conv2d(in_ch, out_ch, 1) if in_ch != out_ch else nn.Identity()
-        self.act = nn.SiLU()
-
-    def forward(self, x, cond):
-        h = self.act(self.norm1(x))
-        h = self.conv1(h)
-        scale, shift = self.cond_proj(cond).chunk(2, dim=1)
-        h = self.norm2(h) * (1 + scale[:, :, None, None]) + shift[:, :, None, None]
-        h = self.act(h)
-        h = self.conv2(h)
-        return h + self.skip(x)
-
-
-class TabularConditionalUNet(nn.Module):
-    """Small UNet for 28x28 grayscale images, conditioned on tab+vif+class+time."""
-    def __init__(self, cond_dim, base_ch=32):
-        super().__init__()
-        full_cond_dim = base_ch * 4
-
-        self.time_embed = nn.Sequential(
-            SinusoidalTimeEmbedding(base_ch),
-            nn.Linear(base_ch, full_cond_dim),
-            nn.SiLU(),
-            nn.Linear(full_cond_dim, full_cond_dim),
-        )
-        self.cond_mlp = nn.Sequential(
-            nn.Linear(cond_dim, full_cond_dim),
-            nn.SiLU(),
-            nn.Linear(full_cond_dim, full_cond_dim),
-        )
-
-        self.in_conv = nn.Conv2d(1, base_ch, 3, padding=1)
-
-        self.down1 = FiLMResBlock(base_ch, base_ch, full_cond_dim)
-        self.down_pool1 = nn.Conv2d(base_ch, base_ch, 3, stride=2, padding=1)      # 28 -> 14
-
-        self.down2 = FiLMResBlock(base_ch, base_ch * 2, full_cond_dim)
-        self.down_pool2 = nn.Conv2d(base_ch * 2, base_ch * 2, 3, stride=2, padding=1)  # 14 -> 7
-
-        self.mid = FiLMResBlock(base_ch * 2, base_ch * 2, full_cond_dim)
-
-        self.up_conv1 = nn.ConvTranspose2d(base_ch * 2, base_ch * 2, 4, stride=2, padding=1)  # 7 -> 14
-        self.up1 = FiLMResBlock(base_ch * 4, base_ch * 2, full_cond_dim)
-
-        self.up_conv2 = nn.ConvTranspose2d(base_ch * 2, base_ch, 4, stride=2, padding=1)      # 14 -> 28
-        self.up2 = FiLMResBlock(base_ch * 2, base_ch, full_cond_dim)
-
-        self.out_norm = nn.GroupNorm(8, base_ch)
-        self.out_conv = nn.Conv2d(base_ch, 1, 3, padding=1)
-        self.act = nn.SiLU()
-
-    def forward(self, x, t, cond):
-        full_cond = self.time_embed(t) + self.cond_mlp(cond)
-
-        h1 = self.down1(self.in_conv(x), full_cond)
-        h1p = self.down_pool1(h1)
-
-        h2 = self.down2(h1p, full_cond)
-        h2p = self.down_pool2(h2)
-
-        hm = self.mid(h2p, full_cond)
-
-        u1 = torch.cat([self.up_conv1(hm), h2], dim=1)
-        u1 = self.up1(u1, full_cond)
-
-        u2 = torch.cat([self.up_conv2(u1), h1], dim=1)
-        u2 = self.up2(u2, full_cond)
-
-        return self.out_conv(self.act(self.out_norm(u2)))
-
-
-class TabularConditionalDiffusion(nn.Module):
-    """
-    Drop-in replacement for CAEWithTabEmbedding.
-    Reuses SimpleMLP + VIFInitialization for conditioning, replaces the
-    encoder/decoder with a class+tabular-conditioned DDPM.
-    """
-    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8,
-                 vif_values=None, base_ch=32, timesteps=1000, class_emb_dim=16):
-        super().__init__()
-        # unchanged conditioning pathway from your original CAE
+class CAEWithTabEmbedding(nn.Module):
+    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values=None):
+        super(CAEWithTabEmbedding, self).__init__()
         self.mlp = SimpleMLP(input_dim, tab_latent_size, num_classes)
         if vif_values is not None:
             self.vif_model = VIFInitialization(input_dim, vif_values)
         else:
             self.vif_model = None
-
-        self.class_embed = nn.Embedding(num_classes, class_emb_dim)
-        cond_dim = tab_latent_size + input_dim + class_emb_dim
-
-        self.unet = TabularConditionalUNet(cond_dim=cond_dim, base_ch=base_ch)
-        self.final_classifier = CLIPImageClassifier(num_classes=num_classes)
-
-        self.timesteps = timesteps
-        betas = torch.linspace(1e-4, 0.02, timesteps)
-        alphas = 1.0 - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
-        self.register_buffer('alphas_cumprod', alphas_cumprod)
-        self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(alphas_cumprod))
-        self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1 - alphas_cumprod))
-
-    def get_condition(self, tab_data, tab_label):
-        """Same conditioning signal as the old CAE: tab_embedding + vif_embedding, plus class."""
+        self.encoder = nn.Sequential(
+            nn.Linear(28*28 + tab_latent_size + input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, latent_size)
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_size + tab_latent_size + input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 28*28),
+            nn.Sigmoid()
+        )
+        self.final_classifier = SimpleCNN(num_classes=num_classes)
+    def encode(self, x, tab_embedding, vif_embedding):
+        return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
+    def decode(self, z, tab_embedding, vif_embedding):
+        return self.decoder(torch.cat([z, tab_embedding, vif_embedding], dim=1))
+    def forward(self, x, tab_data):
         if self.vif_model is not None:
             vif_embedding = self.vif_model(tab_data)
         else:
             vif_embedding = tab_data
         tab_embedding, tab_pred = self.mlp(tab_data)
-        class_emb = self.class_embed(tab_label)
-        cond = torch.cat([tab_embedding, vif_embedding, class_emb], dim=1)
-        return cond, tab_pred
+        z = self.encode(x, tab_embedding, vif_embedding)
+        recon_x = self.decode(z, tab_embedding, vif_embedding)
+        img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28))
+        return recon_x, tab_pred, img_pred
 
-    def q_sample(self, x0, t, noise):
-        sqrt_ac = self.sqrt_alphas_cumprod[t].view(-1, 1, 1, 1)
-        sqrt_omac = self.sqrt_one_minus_alphas_cumprod[t].view(-1, 1, 1, 1)
-        return sqrt_ac * x0 + sqrt_omac * noise
-
-    def forward(self, x0, tab_data, tab_label, cond_drop_prob=0.1):
-        """
-        TRAINING call. x0 is a REAL image batch (B,1,28,28), values in [-1,1].
-        Returns predicted noise, the true noise, and tab_pred (for the tab
-        classification loss) -- replaces the old recon_x/tab_pred/img_pred forward.
-        """
-        B = x0.shape[0]
-        device = x0.device
-        cond, tab_pred = self.get_condition(tab_data, tab_label)
-
-        if self.training and cond_drop_prob > 0:
-            drop_mask = (torch.rand(B, device=device) < cond_drop_prob).float().unsqueeze(1)
-            cond = cond * (1 - drop_mask)  # classifier-free guidance dropout
-
-        t = torch.randint(0, self.timesteps, (B,), device=device).long()
-        noise = torch.randn_like(x0)
-        x_t = self.q_sample(x0, t, noise)
-        predicted_noise = self.unet(x_t, t, cond)
-        return predicted_noise, noise, tab_pred
-
-    @torch.no_grad()
-    def sample(self, tab_data, tab_label, num_steps=50, guidance_scale=2.0):
-        """
-        GENERATION call (replaces calling forward() to get recon_x).
-        Runs a DDIM reverse loop conditioned on tab+vif+class embeddings.
-        Returns (gen_x in [-1,1], tab_pred, img_pred) -- same 3-tuple shape
-        your test()/save_sample_images() code already expects.
-        """
-        device = tab_data.device
-        B = tab_data.shape[0]
-        cond, tab_pred = self.get_condition(tab_data, tab_label)
-        uncond = torch.zeros_like(cond)
-
-        x = torch.randn(B, 1, 28, 28, device=device)
-        steps = torch.linspace(self.timesteps - 1, 0, num_steps).long().to(device)
-
-        for i in range(len(steps)):
-            t_cur = steps[i]
-            t_batch = torch.full((B,), t_cur, device=device, dtype=torch.long)
-
-            eps_cond = self.unet(x, t_batch, cond)
-            if guidance_scale != 1.0:
-                eps_uncond = self.unet(x, t_batch, uncond)
-                eps = eps_uncond + guidance_scale * (eps_cond - eps_uncond)
-            else:
-                eps = eps_cond
-
-            alpha_t = self.alphas_cumprod[t_cur]
-            alpha_prev = self.alphas_cumprod[steps[i + 1]] if i < len(steps) - 1 \
-                else torch.tensor(1.0, device=device)
-
-            x0_pred = (x - torch.sqrt(1 - alpha_t) * eps) / torch.sqrt(alpha_t)
-            x0_pred = torch.clamp(x0_pred, -1, 1)
-            x = torch.sqrt(alpha_prev) * x0_pred + torch.sqrt(1 - alpha_prev) * eps
-
-        img_pred = self.final_classifier(x)
-        return x, tab_pred, img_pred
-
-print("[INFO] Creating diffusion model...")
-cae = TabularConditionalDiffusion(
+print("[INFO] Creating model...")
+cae = CAEWithTabEmbedding(
     input_dim=n_cont_features,
     tab_latent_size=tab_latent_size,
     num_classes=num_classes,
-    vif_values=vif_values,
-    base_ch=32,
-    timesteps=1000
+    latent_size=8,
+    vif_values=vif_values
 ).to(DEVICE)
 #optimizer = optim.AdamW(cae.parameters(), lr=0.001, weight_decay=1e-4)
 #optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True, weight_decay=1e-4)
-#optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
-optimizer = ADOPT(
-    filter(lambda p: p.requires_grad, cae.parameters()),
-    lr=0.001, decouple=True
-)
+optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True)
 
 print(f"[INFO] Model created with {sum(p.numel() for p in cae.parameters())} parameters")
 # ============================================================
@@ -722,29 +525,25 @@ print(f"       Configuration: C={num_classes} classes, N={n_cont_features} featu
 if num_classes == 2 and n_cont_features == 78:
     print(f"       ✓ Matches Table 2 specs (Expected: ~627.6K)")
 #############################################
-def diffusion_loss_function(predicted_noise, noise, tab_pred, tab_labels):
-    noise_loss = F.mse_loss(predicted_noise, noise)
+def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels):
+    BCE = F.mse_loss(recon_x, x)
     tab_loss = F.cross_entropy(tab_pred, tab_labels)
-    return noise_loss + tab_loss
-
-def normalize_img(x):
-    return x * 2 - 1  # [0,1] -> [-1,1], standard diffusion target range
-
-def denormalize_img(x):
-    return (x.clamp(-1, 1) + 1) / 2  # [-1,1] -> [0,1] for display/saving
+    img_loss = F.cross_entropy(img_pred, img_labels)
+    return BCE + tab_loss + img_loss
 
 def train(model, train_data_loader, optimizer, epoch):
     model.train()
     train_loss = 0
     for tab_data, tab_label, img_data, img_label in train_data_loader:
-        # keep image as (B,1,28,28) for the conv UNet -- do NOT flatten
-        img_data = normalize_img(img_data.to(DEVICE))
+        img_data = img_data.view(-1, 28*28).to(DEVICE)
         tab_data = tab_data.to(DEVICE)
+        img_label = img_label.to(DEVICE).long()
         tab_label = tab_label.to(DEVICE).long()
-
         optimizer.zero_grad()
-        predicted_noise, noise, tab_pred = model(img_data, tab_data, tab_label)
-        loss = diffusion_loss_function(predicted_noise, noise, tab_pred, tab_label)
+        random_array = np.random.rand(img_data.shape[0], 28*28)
+        x_rand = torch.Tensor(random_array).to(DEVICE)
+        recon_x, tab_pred, img_pred = model(x_rand, tab_data)
+        loss = loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
@@ -761,18 +560,14 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
 
     with torch.no_grad():
         for tab_data, tab_label, img_data, img_label in test_data_loader:
-            img_data = img_data.to(DEVICE)
-            img_data_norm = normalize_img(img_data)
+            img_data = img_data.view(-1, 28*28).to(DEVICE)
             tab_data = tab_data.to(DEVICE)
             img_label = img_label.to(DEVICE).long()
             tab_label = tab_label.to(DEVICE).long()
-
-            # cheap: noise-prediction loss, matches the training objective
-            predicted_noise, noise, tab_pred = model(img_data_norm, tab_data, tab_label, cond_drop_prob=0.0)
-            test_loss += (F.mse_loss(predicted_noise, noise) + F.cross_entropy(tab_pred, tab_label)).item()
-
-            # expensive: full reverse-diffusion generation, needed for img_pred/img_accuracy
-            gen_x, _, img_pred = model.sample(tab_data, tab_label, num_steps=50, guidance_scale=2.0)
+            random_array = np.random.rand(img_data.shape[0], 28*28)
+            x_rand = torch.Tensor(random_array).view(-1, 28*28).to(DEVICE)
+            recon_x, tab_pred, img_pred = model(x_rand, tab_data)
+            test_loss += loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label).item()
             tab_probs = F.softmax(tab_pred, dim=1)
             img_probs = F.softmax(img_pred, dim=1)
             all_tab_labels.extend(tab_label.cpu().numpy())
@@ -851,22 +646,23 @@ def save_sample_images(model, test_data_loader, dataset_name, num_classes, num_i
             if all(len(samples) >= samples_per_class for samples in class_samples.values()):
                 break
                 
+            img_data_flat = img_data.view(-1, 28*28).to(DEVICE)
             tab_data = tab_data.to(DEVICE)
-            tab_label_dev = tab_label.to(DEVICE).long()
-
-            # Generate images via the diffusion model's reverse (denoising) process
-            gen_x, _, _ = model.sample(tab_data, tab_label_dev, num_steps=50, guidance_scale=2.0)
-            gen_x = denormalize_img(gen_x)  # back to [0,1] for imshow/imsave
-
+            
+            # Generate reconstructed images
+            random_array = np.random.rand(img_data_flat.shape[0], 28*28)
+            x_rand = torch.Tensor(random_array).to(DEVICE)
+            recon_x, _, _ = model(x_rand, tab_data)
+            
             # Store samples by class
             for i in range(len(tab_label)):
                 label = tab_label[i].item()
-
+                
                 # Only collect if we need more samples for this class
                 if len(class_samples[label]) < samples_per_class:
                     class_samples[label].append({
                         'original': img_data[i].cpu().numpy(),
-                        'reconstructed': gen_x[i].squeeze(0).cpu().numpy(),
+                        'reconstructed': recon_x[i].cpu().numpy().reshape(28, 28),
                         'label': label
                     })
     
