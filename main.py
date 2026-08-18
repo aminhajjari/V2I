@@ -456,7 +456,7 @@ class CLIPImageClassifier(nn.Module):
         feats = feats.float()
         return self.classifier_head(feats)
 
-class SimpleMLP(nn.Module):
+
 
 class SimpleMLP(nn.Module):
     def __init__(self, input_dim, latent_dim, num_classes):
