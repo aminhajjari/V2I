@@ -414,30 +414,41 @@ test_synchronized_loader = DataLoader(test_synchronized_dataset, batch_size=BATC
 print(f"[INFO] Synchronized datasets created. Train batches: {len(train_synchronized_loader)}")
 
 # ========== MODEL DEFINITIONS ==========
-class CLIPImageClassifier(nn.Module):
+class CLIPZeroShotClassifier(nn.Module):
     """
-    Drop-in replacement for SimpleCNN. Input contract: (B,1,28,28) in [0,1]
+    Zero-shot classifier using CLIP's text encoder.
+    No trainable head -- classifies by cosine similarity to FashionMNIST/MNIST
+    class-name text embeddings. Input contract: (B,1,28,28) in [0,1]
     (this script's decoder ends in Sigmoid, so no [-1,1] rescale needed).
+    Label convention matches ModifiedLabelDataset: 0-9 = FashionMNIST, 10-19 = MNIST.
     """
-    def __init__(self, num_classes, clip_model_path=CLIP_MODEL_PATH,
-                 device=DEVICE, freeze_clip=True):
+    CLASS_NAMES = [
+        "t-shirt or top", "trouser", "pullover", "dress", "coat",
+        "sandal", "shirt", "sneaker", "bag", "ankle boot",
+        "the digit zero", "the digit one", "the digit two", "the digit three", "the digit four",
+        "the digit five", "the digit six", "the digit seven", "the digit eight", "the digit nine"
+    ]
+
+    def __init__(self, num_classes, clip_model_path=CLIP_MODEL_PATH, device=DEVICE):
         super().__init__()
-        self.freeze_clip = freeze_clip
         clip_model, _ = clip.load(clip_model_path, device=device, jit=False)
         self.clip_model = clip_model.float()
-
-        if freeze_clip:
-            for p in self.clip_model.parameters():
-                p.requires_grad = False
-            self.clip_model.eval()
-
-        embed_dim = self.clip_model.visual.output_dim  # 512 for ViT-B/32
-        self.classifier_head = nn.Linear(embed_dim, num_classes)
+        for p in self.clip_model.parameters():
+            p.requires_grad = False
+        self.clip_model.eval()
 
         self.register_buffer('clip_mean',
             torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
         self.register_buffer('clip_std',
             torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
+
+        class_names = self.CLASS_NAMES[:num_classes]
+        prompts = [f"a photo of {name}" for name in class_names]
+        text_tokens = clip.tokenize(prompts).to(device)
+        with torch.no_grad():
+            text_feats = self.clip_model.encode_text(text_tokens).float()
+            text_feats = text_feats / text_feats.norm(dim=-1, keepdim=True)
+        self.register_buffer('text_features', text_feats)  # (num_classes, 512)
 
     def _preprocess(self, x):
         x = x.clamp(0, 1)                     # already [0,1] from Sigmoid decoder
@@ -448,13 +459,13 @@ class CLIPImageClassifier(nn.Module):
 
     def forward(self, x):
         x = self._preprocess(x)
-        if self.freeze_clip:
-            with torch.no_grad():
-                feats = self.clip_model.encode_image(x)
-        else:
-            feats = self.clip_model.encode_image(x)
-        feats = feats.float()
-        return self.classifier_head(feats)
+        with torch.no_grad():
+            img_feats = self.clip_model.encode_image(x).float()
+        img_feats = img_feats / img_feats.norm(dim=-1, keepdim=True)
+        logit_scale = self.clip_model.logit_scale.exp()
+        logits = logit_scale * img_feats @ self.text_features.T  # (B, num_classes)
+        return logits
+
 
 
 class SimpleMLP(nn.Module):
