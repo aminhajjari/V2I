@@ -507,7 +507,7 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(128, 28*28),
             nn.Sigmoid()
         )
-        self.final_classifier = SimpleCNN(num_classes=num_classes)
+        self.final_classifier = CLIPImageClassifier(num_classes=num_classes)
     def encode(self, x, tab_embedding, vif_embedding):
         return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
     def decode(self, z, tab_embedding, vif_embedding):
