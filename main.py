@@ -637,7 +637,7 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
         except Exception as e:
             print(f"[WARNING] Tab AUC calculation failed: {e}")
     
-    if not (np.isnan(all_img_preds_arr).any() or np.isinf(all_img_preds_arr).any()):
+        if not (np.isnan(all_img_preds_arr).any() or np.isinf(all_img_preds_arr).any()):
         try:
             if num_classes == 2:
                 img_auc = roc_auc_score(all_img_labels_arr, all_img_preds_arr[:, 1])
@@ -646,7 +646,7 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
         except Exception as e:
             print(f"[WARNING] Img AUC calculation failed: {e}")
 
-        if img_accuracy_total > best_accuracy:
+    if img_accuracy_total > best_accuracy:
         best_accuracy = img_accuracy_total
         best_auc = img_auc          # take AUC from the SAME epoch, not its own running max
         best_epoch = epoch
