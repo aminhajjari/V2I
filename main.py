@@ -627,7 +627,7 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
     all_tab_labels_arr = np.array(all_tab_labels)
     all_img_labels_arr = np.array(all_img_labels)
 
-    tab_auc, img_auc = 0.0, 0.0
+        tab_auc, img_auc = 0.0, 0.0
     if not (np.isnan(all_tab_preds_arr).any() or np.isinf(all_tab_preds_arr).any()):
         try:
             if num_classes == 2:
@@ -636,8 +636,8 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
                 tab_auc = roc_auc_score(all_tab_labels_arr, all_tab_preds_arr, multi_class="ovr", average="macro")
         except Exception as e:
             print(f"[WARNING] Tab AUC calculation failed: {e}")
-    
-        if not (np.isnan(all_img_preds_arr).any() or np.isinf(all_img_preds_arr).any()):
+
+    if not (np.isnan(all_img_preds_arr).any() or np.isinf(all_img_preds_arr).any()):
         try:
             if num_classes == 2:
                 img_auc = roc_auc_score(all_img_labels_arr, all_img_preds_arr[:, 1])
