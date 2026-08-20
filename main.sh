@@ -13,7 +13,7 @@
 #SBATCH --time=96:00:00
 
 #SBATCH --output=/home/gkianfar/scratch/Amin/ICC/output/logs/V2Idebug_%A.out
-#SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/logs/debug_%A.err
+#SBATCH --error=/home/gkianfar/scratch/Amin/ICC/output/logs/V2Idebug_%A.err
 
 #=======================================================================
 # Configuration
