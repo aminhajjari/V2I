@@ -643,12 +643,11 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
         except Exception as e:
             print(f"[WARNING] Img AUC calculation failed: {e}")
 
-    if img_accuracy_total > best_accuracy:
+        if img_accuracy_total > best_accuracy:
         best_accuracy = img_accuracy_total
+        best_auc = img_auc          # take AUC from the SAME epoch, not its own running max
         best_epoch = epoch
-        print(f"[INFO] New best accuracy: {best_accuracy:.2f}% at epoch {epoch}")
-    if img_auc > best_auc:
-        best_auc = img_auc
+        print(f"[INFO] New best accuracy: {best_accuracy:.2f}% (AUC: {img_auc:.4f}) at epoch {epoch}")
 
     return best_accuracy, best_auc, best_epoch, test_loss, tab_accuracy_total, img_accuracy_total
 
