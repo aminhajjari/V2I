@@ -260,6 +260,9 @@ for col in X_df.columns:
     else:
         X_df[col] = pd.to_numeric(X_df[col], errors='coerce')
 
+if X_df.shape[1] == 0:
+    raise ValueError(f"All features dropped for {file_name} — check dtype handling.")
+
 print(f"[INFO] Imputing missing values with median...")
 imputer = SimpleImputer(strategy='median')
 X = imputer.fit_transform(X_df)
