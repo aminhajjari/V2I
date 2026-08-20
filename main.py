@@ -627,7 +627,7 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
     all_tab_labels_arr = np.array(all_tab_labels)
     all_img_labels_arr = np.array(all_img_labels)
 
-        tab_auc, img_auc = 0.0, 0.0
+    tab_auc, img_auc = 0.0, 0.0
     if not (np.isnan(all_tab_preds_arr).any() or np.isinf(all_tab_preds_arr).any()):
         try:
             if num_classes == 2:
