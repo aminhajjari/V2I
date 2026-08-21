@@ -549,11 +549,13 @@ print(f"       Configuration: C={num_classes} classes, N={n_cont_features} featu
 if num_classes == 2 and n_cont_features == 78:
     print(f"       ✓ Matches Table 2 specs (Expected: ~627.6K)")
 #############################################
-def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels):
+def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z, con_weight=0.5):
     BCE = F.mse_loss(recon_x, x)
     tab_loss = F.cross_entropy(tab_pred, tab_labels)
     img_loss = F.cross_entropy(img_pred, img_labels)
-    return BCE + tab_loss + img_loss
+    fused_loss = F.cross_entropy(fused_pred, tab_labels)
+    con_loss = supcon_loss(z, tab_labels)
+    return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
 def train(model, train_data_loader, optimizer, epoch):
     model.train()
