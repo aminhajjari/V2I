@@ -414,57 +414,38 @@ test_synchronized_loader = DataLoader(test_synchronized_dataset, batch_size=BATC
 print(f"[INFO] Synchronized datasets created. Train batches: {len(train_synchronized_loader)}")
 
 # ========== MODEL DEFINITIONS ==========
-class CLIPZeroShotClassifier(nn.Module):
+class ImageClassifierHead(nn.Module):
     """
-    Zero-shot classifier using CLIP's text encoder.
-    No trainable head -- classifies by cosine similarity to FashionMNIST/MNIST
-    class-name text embeddings. Input contract: (B,1,28,28) in [0,1]
-    (this script's decoder ends in Sigmoid, so no [-1,1] rescale needed).
-    Label convention matches ModifiedLabelDataset: 0-9 = FashionMNIST, 10-19 = MNIST.
+    Trainable CNN classifier over the reconstructed 28x28 image.
+    Replaces the frozen CLIP zero-shot classifier, which scored against a
+    fixed clothing/digit vocabulary unrelated to the dataset's real classes.
     """
-    CLASS_NAMES = [
-        "t-shirt or top", "trouser", "pullover", "dress", "coat",
-        "sandal", "shirt", "sneaker", "bag", "ankle boot",
-        "the digit zero", "the digit one", "the digit two", "the digit three", "the digit four",
-        "the digit five", "the digit six", "the digit seven", "the digit eight", "the digit nine"
-    ]
-
-    def __init__(self, num_classes, clip_model_path=CLIP_MODEL_PATH, device=DEVICE):
+    def __init__(self, num_classes):
         super().__init__()
-        clip_model, _ = clip.load(clip_model_path, device=device, jit=False)
-        self.clip_model = clip_model.float()
-        for p in self.clip_model.parameters():
-            p.requires_grad = False
-        self.clip_model.eval()
-
-        self.register_buffer('clip_mean',
-            torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
-        self.register_buffer('clip_std',
-            torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
-
-        class_names = self.CLASS_NAMES[:num_classes]
-        prompts = [f"a photo of {name}" for name in class_names]
-        text_tokens = clip.tokenize(prompts).to(device)
-        with torch.no_grad():
-            text_feats = self.clip_model.encode_text(text_tokens).float()
-            text_feats = text_feats / text_feats.norm(dim=-1, keepdim=True)
-        self.register_buffer('text_features', text_feats)  # (num_classes, 512)
-
-    def _preprocess(self, x):
-        x = x.clamp(0, 1)                     # already [0,1] from Sigmoid decoder
-        x = x.repeat(1, 3, 1, 1)               # grayscale -> 3-channel
-        x = F.interpolate(x, size=224, mode='bicubic', align_corners=False)
-        x = (x - self.clip_mean) / self.clip_std
-        return x
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 7 * 7, 128), nn.ReLU(),
+            nn.Linear(128, num_classes)
+        )
 
     def forward(self, x):
-        x = self._preprocess(x)
-        with torch.no_grad():
-            img_feats = self.clip_model.encode_image(x).float()
-        img_feats = img_feats / img_feats.norm(dim=-1, keepdim=True)
-        logit_scale = self.clip_model.logit_scale.exp()
-        logits = logit_scale * img_feats @ self.text_features.T  # (B, num_classes)
-        return logits
+        return self.net(x)
+
+
+def supcon_loss(z, labels, temperature=0.1):
+    """Supervised contrastive loss on the CVAE latent z."""
+    z = F.normalize(z, dim=1)
+    sim = torch.matmul(z, z.T) / temperature
+    labels = labels.view(-1, 1)
+    mask = torch.eq(labels, labels.T).float().to(z.device)
+    logits_mask = torch.ones_like(mask) - torch.eye(mask.shape[0], device=z.device)
+    mask = mask * logits_mask
+    exp_sim = torch.exp(sim) * logits_mask
+    log_prob = sim - torch.log(exp_sim.sum(1, keepdim=True) + 1e-8)
+    mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-8)
+    return -mean_log_prob_pos.mean()
 
 
 
