@@ -498,7 +498,13 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(128, 28*28),
             nn.Sigmoid()
         )
-        self.final_classifier = CLIPZeroShotClassifier(num_classes=num_classes)
+        self.final_classifier = ImageClassifierHead(num_classes=num_classes)
+        self.gate = nn.Sequential(
+            nn.Linear(tab_latent_size + num_classes, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
     def encode(self, x, tab_embedding, vif_embedding):
         return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
     def decode(self, z, tab_embedding, vif_embedding):
@@ -512,7 +518,9 @@ class CAEWithTabEmbedding(nn.Module):
         z = self.encode(x, tab_embedding, vif_embedding)
         recon_x = self.decode(z, tab_embedding, vif_embedding)
         img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28))
-        return recon_x, tab_pred, img_pred
+        alpha = self.gate(torch.cat([tab_embedding, img_pred], dim=1))
+        fused_pred = alpha * img_pred + (1 - alpha) * tab_pred
+        return recon_x, tab_pred, img_pred, fused_pred, z
 
 print("[INFO] Creating model...")
 cae = CAEWithTabEmbedding(
