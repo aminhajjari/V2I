@@ -23,10 +23,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
-from adopt import ADOPT 
-import sys
-sys.path.append("/home/gkianfar/scratch/Amin/ICC/models/CLIP")
-import clip
+#from adopt import ADOPT 
 
 # ========== ARGUMENT PARSER ==========
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
@@ -48,7 +45,7 @@ data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 
 DATASET_ROOT = "/home/gkianfar/scratch/Amin/ICC/Unzippeddata/Image"
-CLIP_MODEL_PATH = "/home/gkianfar/scratch/Amin/ICC/models/ViT-B-32.pt"
+#CLIP_MODEL_PATH = "/home/gkianfar/scratch/Amin/ICC/models/ViT-B-32.pt"
 
 
 USE_CUDA = torch.cuda.is_available()
