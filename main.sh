@@ -34,7 +34,7 @@ RESULTS_BASE="$PROJECT_DIR/output"
 
 JOB_LOGS_DIR="$PROJECT_DIR/output"
 
-TIMEOUT_DEFAULT=14400  # 4 hours
+TIMEOUT_DEFAULT=28800 # 4 hours
 
 
 #=======================================================================
