@@ -226,7 +226,8 @@ python "$BATCH_SCRIPT" \
     --output_base "$RESULTS_BASE" \
     --job_id "$SLURM_JOB_ID" \
     --script_path "$MAIN_SCRIPT" \
-    --timeout "$TIMEOUT_DEFAULT"
+    --timeout "$TIMEOUT_DEFAULT" \
+    --skip_existing
 
 EXIT_CODE=$?
 
