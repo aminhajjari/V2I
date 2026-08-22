@@ -96,7 +96,7 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     num_images = '5'
 
     # Adjust these names if your CIFAR folder/file is different
-    if dataset_name.lower() in ['cifar', 'cifar-10', 'cifar10']:
+    if 'cifar' in dataset_name.lower():
         print(f"🔧 Detected CIFAR‑10 – increasing timeout and reducing images per class")
         effective_timeout = max(timeout, 28800)  # at least 4 hours
         
