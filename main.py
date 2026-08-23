@@ -40,7 +40,7 @@ args = parser.parse_args()
 EPOCH = 50
 BATCH_SIZE = 64
 NUM_IMAGES_TO_SAVE = min(args.num_images, 20)  # Cap at 20
-
+LAMBDA_VIF = 0.02  # weight on the VIF-prior anchoring term
 data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 
