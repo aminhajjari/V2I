@@ -414,24 +414,60 @@ test_synchronized_loader = DataLoader(test_synchronized_dataset, batch_size=BATC
 print(f"[INFO] Synchronized datasets created. Train batches: {len(train_synchronized_loader)}")
 
 # ========== MODEL DEFINITIONS ==========
+class TabConditionedChannelAttention(nn.Module):
+    """
+    CBAM-style channel attention, conditioned on tab_embedding (TabAttention-style).
+    Lets the image branch know which tabular pattern it's reconstructing for.
+    """
+    def __init__(self, channels, tab_dim, reduction=16):
+        super().__init__()
+        reduced = max(channels // reduction, 4)
+        self.tab_embed = nn.Sequential(
+            nn.Linear(tab_dim, reduced), nn.ReLU()
+        )
+        self.shared_mlp = nn.Sequential(
+            nn.Linear(reduced, reduced), nn.ReLU(),
+            nn.Linear(reduced, channels)
+        )
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.channel_reduce = nn.Linear(channels, reduced)
+
+    def forward(self, feat_map, tab_embedding):
+        b, c, h, w = feat_map.shape
+        avg_desc = self.channel_reduce(self.avg_pool(feat_map).view(b, c))
+        max_desc = self.channel_reduce(self.max_pool(feat_map).view(b, c))
+        tab_desc = self.tab_embed(tab_embedding)
+        attn = torch.sigmoid(self.shared_mlp(avg_desc) + self.shared_mlp(max_desc) + self.shared_mlp(tab_desc))
+        return feat_map * attn.view(b, c, 1, 1)
+
+
 class ImageClassifierHead(nn.Module):
     """
     Trainable CNN classifier over the reconstructed 28x28 image.
     Replaces the frozen CLIP zero-shot classifier, which scored against a
     fixed clothing/digit vocabulary unrelated to the dataset's real classes.
+    Now also conditions its channel attention on the tabular embedding
+    (TabAttention-style), so the image branch is no longer tabular-blind.
     """
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, tab_latent_size):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+        self.conv1 = nn.Sequential(nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2))
+        self.tab_attn1 = TabConditionedChannelAttention(32, tab_latent_size)
+        self.conv2 = nn.Sequential(nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2))
+        self.tab_attn2 = TabConditionedChannelAttention(64, tab_latent_size)
+        self.fc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(64 * 7 * 7, 128), nn.ReLU(),
             nn.Linear(128, num_classes)
         )
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, tab_embedding):
+        x = self.conv1(x)
+        x = self.tab_attn1(x, tab_embedding)
+        x = self.conv2(x)
+        x = self.tab_attn2(x, tab_embedding)
+        return self.fc(x)
 
 
 def supcon_loss(z, labels, temperature=0.1):
