@@ -557,12 +557,6 @@ def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_
     con_loss = supcon_loss(z, tab_labels)
     return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
-    if model is not None and getattr(model, 'vif_model', None) is not None:
-        vif_kl = model.vif_model.prior_regularization()
-        total = total + lambda_vif * vif_kl
-
-    return total
-
 def train(model, train_data_loader, optimizer, epoch):
     model.train()
     train_loss = 0
