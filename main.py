@@ -40,7 +40,7 @@ args = parser.parse_args()
 EPOCH = 50
 BATCH_SIZE = 64
 NUM_IMAGES_TO_SAVE = min(args.num_images, 20)  # Cap at 20
-LAMBDA_VIF = 0.02  # weight on the VIF-prior anchoring term
+
 data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 
@@ -557,14 +557,13 @@ print(f"       Configuration: C={num_classes} classes, N={n_cont_features} featu
 if num_classes == 2 and n_cont_features == 78:
     print(f"       ✓ Matches Table 2 specs (Expected: ~627.6K)")
 #############################################
-def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z,
-                   model=None, con_weight=0.5, lambda_vif=0.02):
+def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z, con_weight=0.5):
     BCE = F.mse_loss(recon_x, x)
     tab_loss = F.cross_entropy(tab_pred, tab_labels)
     img_loss = F.cross_entropy(img_pred, img_labels)
     fused_loss = F.cross_entropy(fused_pred, tab_labels)
     con_loss = supcon_loss(z, tab_labels)
-    total = BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
+    return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
     if model is not None and getattr(model, 'vif_model', None) is not None:
         vif_kl = model.vif_model.prior_regularization()
@@ -584,7 +583,7 @@ def train(model, train_data_loader, optimizer, epoch):
         random_array = np.random.rand(img_data.shape[0], 28*28)
         x_rand = torch.Tensor(random_array).to(DEVICE)
         recon_x, tab_pred, img_pred, fused_pred, z = model(x_rand, tab_data)
-        loss = loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label, fused_pred, z, model=model, lambda_vif=LAMBDA_VIF)
+        loss = loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label, fused_pred, z)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
@@ -610,7 +609,7 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
             random_array = np.random.rand(img_data.shape[0], 28*28)
             x_rand = torch.Tensor(random_array).view(-1, 28*28).to(DEVICE)
             recon_x, tab_pred, img_pred, fused_pred, z = model(x_rand, tab_data)
-            test_loss += loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label, fused_pred, z, model=model, lambda_vif=LAMBDA_VIF).item()
+            test_loss += loss_function(recon_x, img_data, tab_pred, tab_label, img_pred, img_label, fused_pred, z).item()
             tab_probs = F.softmax(tab_pred, dim=1)
             img_probs = F.softmax(img_pred, dim=1)
             fused_probs = F.softmax(fused_pred, dim=1)
