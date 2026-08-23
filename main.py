@@ -460,31 +460,39 @@ class SimpleMLP(nn.Module):
         x = self.fc2(tab_latent)
         return tab_latent, x
 
-class VIFInitialization(nn.Module):
+class VIFAttention(nn.Module):
     def __init__(self, input_dim, vif_values):
-        super(VIFInitialization, self).__init__()
-        self.input_dim = input_dim
-        self.vif_values = vif_values
-        self.fc1 = nn.Linear(input_dim, input_dim + 4)
-        self.fc2 = nn.Linear(input_dim + 4, input_dim)
+        super().__init__()
         vif_tensor = torch.tensor(vif_values, dtype=torch.float32)
         vif_tensor = vif_tensor / (vif_tensor.mean() + 1e-6)
-        inv_vif = 1.0 / torch.clamp(vif_tensor, min=1.0)
-        with torch.no_grad():
-            for i in range(self.fc1.weight.data.shape[0]):
-                self.fc1.weight.data[i, :] = inv_vif[i % len(inv_vif)] / (self.input_dim + 4)
-        print("[INFO] VIF-based weight initialization complete.")
+        inv_vif_prior = 1.0 / torch.clamp(vif_tensor, min=1.0)
+        inv_vif_prior = inv_vif_prior / inv_vif_prior.sum()
+        self.register_buffer('vif_prior', inv_vif_prior)
+
+        # init = VIF prior (this replaces your old init-only behavior)
+        self.attn_logits = nn.Parameter(torch.log(inv_vif_prior + 1e-8))
+        # lets attention shift per-sample instead of being one fixed vector
+        self.context_net = nn.Sequential(nn.Linear(input_dim, input_dim), nn.Tanh())
+        self.input_dim = input_dim
+        self.last_attn = None
+        print("[INFO] VIF-attention initialized from VIF prior.")
+
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return x
+        dynamic_shift = self.context_net(x)
+        attn = F.softmax(self.attn_logits.unsqueeze(0) + dynamic_shift, dim=1)
+        self.last_attn = attn
+        return x * attn * self.input_dim
+
+    def prior_regularization(self):
+        avg_attn = self.last_attn.mean(dim=0)
+        return F.kl_div((avg_attn + 1e-8).log(), self.vif_prior, reduction='batchmean')
 
 class CAEWithTabEmbedding(nn.Module):
     def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values=None):
         super(CAEWithTabEmbedding, self).__init__()
         self.mlp = SimpleMLP(input_dim, tab_latent_size, num_classes)
         if vif_values is not None:
-            self.vif_model = VIFInitialization(input_dim, vif_values)
+            self.vif_model = VIFAttention(input_dim, vif_values)
         else:
             self.vif_model = None
         self.encoder = nn.Sequential(
