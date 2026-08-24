@@ -517,7 +517,7 @@ class CAEWithTabEmbedding(nn.Module):
         tab_embedding, tab_pred = self.mlp(tab_data)
         z = self.encode(x, tab_embedding, vif_embedding)
         recon_x = self.decode(z, tab_embedding, vif_embedding)
-        img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28), tab_embedding)
+        img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28))
         alpha = self.gate(torch.cat([tab_embedding, img_pred], dim=1))
         fused_pred = alpha * img_pred + (1 - alpha) * tab_pred
         return recon_x, tab_pred, img_pred, fused_pred, z
