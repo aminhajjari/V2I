@@ -498,7 +498,7 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(128, 28*28),
             nn.Sigmoid()
         )
-        self.final_classifier = ImageClassifierHead(num_classes=num_classes, tab_latent_size=tab_latent_size)
+        self.final_classifier = ImageClassifierHead(num_classes=num_classes)
         self.gate = nn.Sequential(
             nn.Linear(tab_latent_size + num_classes, 32),
             nn.ReLU(),
