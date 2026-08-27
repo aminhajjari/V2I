@@ -422,7 +422,7 @@ def main():
         print(f"{'='*70}")
         
         # Check if already processed
-                if args.skip_existing:
+        if args.skip_existing:
             dataset_name = dataset_path.parent.name
             progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
             already_processed = False
