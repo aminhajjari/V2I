@@ -349,9 +349,6 @@ print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.m
 print("[INFO] Preparing synchronized image-tabular datasets...")
 train_tabular_label_counts = torch.bincount(train_tabular_dataset.tensors[1], minlength=num_classes)
 test_tabular_label_counts = torch.bincount(test_tabular_dataset.tensors[1], minlength=num_classes)
-class_weights = train_tabular_label_counts.sum() / (train_tabular_label_counts.float() + 1e-6)
-class_weights = (class_weights / class_weights.sum() * num_classes).to(DEVICE)
-print(f"[INFO] Class weights: {class_weights.tolist()}")
 num_samples_needed = train_tabular_label_counts.tolist()
 num_samples_needed_test = test_tabular_label_counts.tolist()
 valid_labels = set(range(num_classes))
@@ -554,9 +551,9 @@ if num_classes == 2 and n_cont_features == 78:
 #############################################
 def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z, con_weight=0.5):
     BCE = F.mse_loss(recon_x, x)
-    tab_loss = F.cross_entropy(tab_pred, tab_labels, weight=class_weights)
-    img_loss = F.cross_entropy(img_pred, img_labels, weight=class_weights)
-    fused_loss = F.cross_entropy(fused_pred, tab_labels, weight=class_weights)
+    tab_loss = F.cross_entropy(tab_pred, tab_labels)
+    img_loss = F.cross_entropy(img_pred, img_labels)
+    fused_loss = F.cross_entropy(fused_pred, tab_labels)
     con_loss = supcon_loss(z, tab_labels)
     return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
@@ -861,10 +858,6 @@ def save_sample_images(model, test_data_loader, dataset_name, num_classes, num_i
     return num_saved, images_dir
 
 # ========== TRAINING LOOP (NO MODEL SAVING) ==========
-n_train_samples = len(train_tabular_dataset)
-EPOCH = int(np.clip(50 * (500 / max(n_train_samples, 50)) ** 0.5, 20, 150))
-print(f"[INFO] Scaled epochs to {EPOCH} for {n_train_samples} training samples")
-
 print("\n" + "="*70)
 print("STARTING TRAINING")
 print("="*70)
