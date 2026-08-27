@@ -861,6 +861,10 @@ def save_sample_images(model, test_data_loader, dataset_name, num_classes, num_i
     return num_saved, images_dir
 
 # ========== TRAINING LOOP (NO MODEL SAVING) ==========
+n_train_samples = len(train_tabular_dataset)
+EPOCH = int(np.clip(50 * (500 / max(n_train_samples, 50)) ** 0.5, 20, 150))
+print(f"[INFO] Scaled epochs to {EPOCH} for {n_train_samples} training samples")
+
 print("\n" + "="*70)
 print("STARTING TRAINING")
 print("="*70)
