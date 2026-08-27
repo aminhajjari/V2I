@@ -470,12 +470,11 @@ class VIFInitialization(nn.Module):
         self.vif_values = vif_values
         self.fc1 = nn.Linear(input_dim, input_dim + 4)
         self.fc2 = nn.Linear(input_dim + 4, input_dim)
-        vif_tensor = torch.tensor(vif_values, dtype=torch.float32)
-        vif_tensor = vif_tensor / (vif_tensor.mean() + 1e-6)
-        inv_vif = 1.0 / torch.clamp(vif_tensor, min=1.0)
+        importance = torch.tensor(vif_values, dtype=torch.float32)
+        importance = importance / (importance.mean() + 1e-6)
         with torch.no_grad():
             for i in range(self.fc1.weight.data.shape[0]):
-                self.fc1.weight.data[i, :] = inv_vif[i % len(inv_vif)] / (self.input_dim + 4)
+                self.fc1.weight.data[i, :] = importance[i % len(importance)] / (self.input_dim + 4)
         print("[INFO] VIF-based weight initialization complete.")
     def forward(self, x):
         x = F.relu(self.fc1(x))
