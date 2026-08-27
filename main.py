@@ -11,6 +11,7 @@ from torch import nn, optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset, TensorDataset, random_split
 from torch.utils.data.sampler import Sampler
+from sklearn.feature_selection import mutual_info_classif
 import torchvision
 from torchvision import datasets, transforms
 import itertools
@@ -343,7 +344,9 @@ def calculate_vif_safe(X_data):
     return vif_values
 
 X_sample = X_train[:min(1000, len(X_train))]
-vif_values = calculate_vif_safe(X_sample)
+y_sample = y_train[:min(1000, len(X_train))]
+vif_values = mutual_info_classif(X_sample, y_sample, random_state=42)
+vif_values = np.clip(vif_values, 1e-3, None)  # avoid exact zeros
 print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
 
 print("[INFO] Preparing synchronized image-tabular datasets...")
