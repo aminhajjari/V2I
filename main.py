@@ -554,9 +554,9 @@ if num_classes == 2 and n_cont_features == 78:
 #############################################
 def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z, con_weight=0.5):
     BCE = F.mse_loss(recon_x, x)
-    tab_loss = F.cross_entropy(tab_pred, tab_labels)
-    img_loss = F.cross_entropy(img_pred, img_labels)
-    fused_loss = F.cross_entropy(fused_pred, tab_labels)
+    tab_loss = F.cross_entropy(tab_pred, tab_labels, weight=class_weights)
+    img_loss = F.cross_entropy(img_pred, img_labels, weight=class_weights)
+    fused_loss = F.cross_entropy(fused_pred, tab_labels, weight=class_weights)
     con_loss = supcon_loss(z, tab_labels)
     return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
