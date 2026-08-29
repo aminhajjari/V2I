@@ -318,7 +318,10 @@ train_tabular_dataset = TensorDataset(
     torch.tensor(X_train, dtype=torch.float32), 
     torch.tensor(y_train, dtype=torch.long)
 )
-
+test_tabular_dataset = TensorDataset(
+    torch.tensor(X_test, dtype=torch.float32), 
+    torch.tensor(y_test, dtype=torch.long)
+)
 
 def calculate_vif_safe(X_data, variance_threshold=0.95):
     n_samples, n_features = X_data.shape
