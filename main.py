@@ -11,7 +11,6 @@ from torch import nn, optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset, TensorDataset, random_split
 from torch.utils.data.sampler import Sampler
-from sklearn.feature_selection import mutual_info_classif
 import torchvision
 from torchvision import datasets, transforms
 import itertools
@@ -20,6 +19,7 @@ import os
 import json
 from datetime import datetime
 
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
@@ -323,19 +323,32 @@ test_tabular_dataset = TensorDataset(
     torch.tensor(y_test, dtype=torch.long)
 )
 
-print("[INFO] Calculating feature importance (mutual information)...")
+print("[INFO] Calculating VIF values...")
+def calculate_vif_safe(X_data):
+    df_vif = pd.DataFrame(X_data)
+    n_features = df_vif.shape[1]
+    vif_values = []
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning)
+        for i in range(n_features):
+            try:
+                vif = variance_inflation_factor(df_vif.values, i)
+                if np.isnan(vif) or np.isinf(vif):
+                    vif = 1.0
+            except:
+                vif = 1.0
+            vif_values.append(vif)
+    vif_values = np.array(vif_values)
+    vif_values = np.clip(vif_values, 1.0, 100.0)
+    return vif_values
+
 X_sample = X_train[:min(1000, len(X_train))]
-y_sample = y_train[:min(1000, len(X_train))]
-vif_values = mutual_info_classif(X_sample, y_sample, random_state=42)
-vif_values = np.clip(vif_values, 1e-3, None)  # avoid exact zeros
-print(f"[INFO] Feature importance calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
+vif_values = calculate_vif_safe(X_sample)
+print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
 
 print("[INFO] Preparing synchronized image-tabular datasets...")
 train_tabular_label_counts = torch.bincount(train_tabular_dataset.tensors[1], minlength=num_classes)
 test_tabular_label_counts = torch.bincount(test_tabular_dataset.tensors[1], minlength=num_classes)
-class_weights = train_tabular_label_counts.sum() / (train_tabular_label_counts.float() + 1e-6)
-class_weights = (class_weights / class_weights.sum() * num_classes).to(DEVICE)
-print(f"[INFO] Class weights: {class_weights.tolist()}")
 num_samples_needed = train_tabular_label_counts.tolist()
 num_samples_needed_test = test_tabular_label_counts.tolist()
 valid_labels = set(range(num_classes))
@@ -454,11 +467,12 @@ class VIFInitialization(nn.Module):
         self.vif_values = vif_values
         self.fc1 = nn.Linear(input_dim, input_dim + 4)
         self.fc2 = nn.Linear(input_dim + 4, input_dim)
-        importance = torch.tensor(vif_values, dtype=torch.float32)
-        importance = importance / (importance.mean() + 1e-6)
+        vif_tensor = torch.tensor(vif_values, dtype=torch.float32)
+        vif_tensor = vif_tensor / (vif_tensor.mean() + 1e-6)
+        inv_vif = 1.0 / torch.clamp(vif_tensor, min=1.0)
         with torch.no_grad():
             for i in range(self.fc1.weight.data.shape[0]):
-                self.fc1.weight.data[i, :] = importance[i % len(importance)] / (self.input_dim + 4)
+                self.fc1.weight.data[i, :] = inv_vif[i % len(inv_vif)] / (self.input_dim + 4)
         print("[INFO] VIF-based weight initialization complete.")
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -537,9 +551,9 @@ if num_classes == 2 and n_cont_features == 78:
 #############################################
 def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels, fused_pred, z, con_weight=0.5):
     BCE = F.mse_loss(recon_x, x)
-    tab_loss = F.cross_entropy(tab_pred, tab_labels, weight=class_weights)
-    img_loss = F.cross_entropy(img_pred, img_labels, weight=class_weights)
-    fused_loss = F.cross_entropy(fused_pred, tab_labels, weight=class_weights)
+    tab_loss = F.cross_entropy(tab_pred, tab_labels)
+    img_loss = F.cross_entropy(img_pred, img_labels)
+    fused_loss = F.cross_entropy(fused_pred, tab_labels)
     con_loss = supcon_loss(z, tab_labels)
     return BCE + tab_loss + img_loss + fused_loss + con_weight * con_loss
 
@@ -844,10 +858,6 @@ def save_sample_images(model, test_data_loader, dataset_name, num_classes, num_i
     return num_saved, images_dir
 
 # ========== TRAINING LOOP (NO MODEL SAVING) ==========
-n_train_samples = len(train_tabular_dataset)
-EPOCH = int(np.clip(50 * (500 / max(n_train_samples, 50)) ** 0.5, 20, 150))
-print(f"[INFO] Scaled epochs to {EPOCH} for {n_train_samples} training samples")
-
 print("\n" + "="*70)
 print("STARTING TRAINING")
 print("="*70)
