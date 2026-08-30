@@ -18,8 +18,7 @@ import argparse
 import os
 import json
 from datetime import datetime
-
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.decomposition import PCA
 import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
