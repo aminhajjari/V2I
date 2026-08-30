@@ -481,20 +481,26 @@ class SimpleMLP(nn.Module):
         x = self.fc2(tab_latent)
         return tab_latent, x
 
-class VIFInitialization(nn.Module):
-    def __init__(self, input_dim, vif_values):
-        super(VIFInitialization, self).__init__()
+class PCAInitialization(nn.Module):
+    """
+    Learnable linear re-weighting of tabular features, initialized from
+    PCA-based collinearity scores instead of VIF. fc1/fc2 still train
+    end-to-end — only the starting weights encode "down-weight collinear
+    features, up-weight independent ones."
+    """
+    def __init__(self, input_dim, pca_scores):
+        super(PCAInitialization, self).__init__()
         self.input_dim = input_dim
-        self.vif_values = vif_values
+        self.pca_scores = pca_scores
         self.fc1 = nn.Linear(input_dim, input_dim + 4)
         self.fc2 = nn.Linear(input_dim + 4, input_dim)
-        vif_tensor = torch.tensor(vif_values, dtype=torch.float32)
-        vif_tensor = vif_tensor / (vif_tensor.mean() + 1e-6)
-        inv_vif = 1.0 / torch.clamp(vif_tensor, min=1.0)
+        pca_tensor = torch.tensor(pca_scores, dtype=torch.float32)
+        pca_tensor = pca_tensor / (pca_tensor.mean() + 1e-6)
+        inv_collinearity = 1.0 / torch.clamp(pca_tensor, min=1.0)
         with torch.no_grad():
             for i in range(self.fc1.weight.data.shape[0]):
-                self.fc1.weight.data[i, :] = inv_vif[i % len(inv_vif)] / (self.input_dim + 4)
-        print("[INFO] VIF-based weight initialization complete.")
+                self.fc1.weight.data[i, :] = inv_collinearity[i % len(inv_collinearity)] / (self.input_dim + 4)
+        print("[INFO] PCA-based weight initialization complete.")
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
