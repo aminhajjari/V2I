@@ -322,28 +322,50 @@ test_tabular_dataset = TensorDataset(
     torch.tensor(y_test, dtype=torch.long)
 )
 
-print("[INFO] Calculating VIF values...")
-def calculate_vif_safe(X_data):
-    df_vif = pd.DataFrame(X_data)
-    n_features = df_vif.shape[1]
-    vif_values = []
+print("[INFO] Calculating PCA-based multicollinearity scores...")
+def calculate_pca_collinearity_safe(X_data, variance_threshold=0.95):
+    """
+    PCA-based multicollinearity score per feature (replaces VIF).
+
+    Fits PCA on the standardized feature matrix, keeps just enough
+    components to explain `variance_threshold` of the variance, then
+    scores each feature by how much of its variance sits in the
+    discarded (low-variance / redundant) components. A high score
+    means the feature is mostly explained by directions that carry
+    little independent information -> collinear with other features.
+    """
+    n_features = X_data.shape[1]
+    n_samples = X_data.shape[0]
+    n_components = min(n_features, n_samples)
+
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=RuntimeWarning)
-        for i in range(n_features):
-            try:
-                vif = variance_inflation_factor(df_vif.values, i)
-                if np.isnan(vif) or np.isinf(vif):
-                    vif = 1.0
-            except:
-                vif = 1.0
-            vif_values.append(vif)
-    vif_values = np.array(vif_values)
-    vif_values = np.clip(vif_values, 1.0, 100.0)
-    return vif_values
+        pca = PCA(n_components=n_components)
+        pca.fit(X_data)
+
+    explained = pca.explained_variance_ratio_
+    cumulative = np.cumsum(explained)
+    n_keep = int(np.searchsorted(cumulative, variance_threshold) + 1)
+    n_keep = min(max(n_keep, 1), n_components)
+
+    loadings = pca.components_               # shape: (n_components, n_features)
+    discarded_var = explained[n_keep:]
+
+    if len(discarded_var) == 0:
+        # everything needed to hit the threshold -> no redundancy signal
+        return np.ones(n_features)
+
+    discarded_loadings = loadings[n_keep:]
+    collinearity_scores = (discarded_loadings ** 2 * discarded_var[:, None]).sum(axis=0)
+
+    # rescale into a VIF-like range: 1.0 = independent, higher = collinear
+    collinearity_scores = collinearity_scores / (collinearity_scores.mean() + 1e-8)
+    collinearity_scores = np.clip(1.0 + collinearity_scores, 1.0, 100.0)
+    return collinearity_scores
 
 X_sample = X_train[:min(1000, len(X_train))]
-vif_values = calculate_vif_safe(X_sample)
-print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
+pca_scores = calculate_pca_collinearity_safe(X_sample)
+print(f"[INFO] PCA collinearity scores calculated. Mean: {pca_scores.mean():.2f}, Max: {pca_scores.max():.2f}")
 
 print("[INFO] Preparing synchronized image-tabular datasets...")
 train_tabular_label_counts = torch.bincount(train_tabular_dataset.tensors[1], minlength=num_classes)
