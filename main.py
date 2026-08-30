@@ -18,7 +18,7 @@ import argparse
 import os
 import json
 from datetime import datetime
-from sklearn.decomposition import PCA
+
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import warnings
 import scipy.io.arff as arff
@@ -323,28 +323,14 @@ test_tabular_dataset = TensorDataset(
     torch.tensor(y_test, dtype=torch.long)
 )
 
-def calculate_vif_safe(X_data, variance_threshold=0.95):
-    n_samples, n_features = X_data.shape
-    n_components = min(n_samples, n_features)
-
-    pca = PCA(n_components=n_components)
-    X_pca = pca.fit_transform(X_data)
-
-    cum_var = np.cumsum(pca.explained_variance_ratio_)
-    n_keep = int(np.searchsorted(cum_var, variance_threshold) + 1)
-    n_keep = min(n_keep, X_pca.shape[1])
-
-    if n_keep < 2:
-        print("[INFO] Too few PCA components for VIF; defaulting to 1.0")
-        return np.ones(max(n_keep, 1))
-
-    X_pca = X_pca[:, :n_keep]
-    df_vif = pd.DataFrame(X_pca)
-
+print("[INFO] Calculating VIF values...")
+def calculate_vif_safe(X_data):
+    df_vif = pd.DataFrame(X_data)
+    n_features = df_vif.shape[1]
     vif_values = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=RuntimeWarning)
-        for i in range(df_vif.shape[1]):
+        for i in range(n_features):
             try:
                 vif = variance_inflation_factor(df_vif.values, i)
                 if np.isnan(vif) or np.isinf(vif):
@@ -352,11 +338,8 @@ def calculate_vif_safe(X_data, variance_threshold=0.95):
             except:
                 vif = 1.0
             vif_values.append(vif)
-
     vif_values = np.array(vif_values)
     vif_values = np.clip(vif_values, 1.0, 100.0)
-    print(f"[INFO] PCA kept {n_keep}/{n_features} components "
-          f"({cum_var[n_keep-1]*100:.1f}% variance) for VIF calc")
     return vif_values
 
 X_sample = X_train[:min(1000, len(X_train))]
