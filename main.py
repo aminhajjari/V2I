@@ -507,13 +507,13 @@ class PCAInitialization(nn.Module):
         return x
 
 class CAEWithTabEmbedding(nn.Module):
-    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values=None):
+    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, pca_scores=None):
         super(CAEWithTabEmbedding, self).__init__()
         self.mlp = SimpleMLP(input_dim, tab_latent_size, num_classes)
-        if vif_values is not None:
-            self.vif_model = VIFInitialization(input_dim, vif_values)
+        if pca_scores is not None:
+            self.pca_model = PCAInitialization(input_dim, pca_scores)
         else:
-            self.vif_model = None
+            self.pca_model = None
         self.encoder = nn.Sequential(
             nn.Linear(28*28 + tab_latent_size + input_dim, 128),
             nn.ReLU(),
@@ -532,18 +532,18 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(32, 1),
             nn.Sigmoid()
         )
-    def encode(self, x, tab_embedding, vif_embedding):
-        return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
-    def decode(self, z, tab_embedding, vif_embedding):
-        return self.decoder(torch.cat([z, tab_embedding, vif_embedding], dim=1))
+    def encode(self, x, tab_embedding, pca_embedding):
+        return self.encoder(torch.cat([x, tab_embedding, pca_embedding], dim=1))
+    def decode(self, z, tab_embedding, pca_embedding):
+        return self.decoder(torch.cat([z, tab_embedding, pca_embedding], dim=1))
     def forward(self, x, tab_data):
-        if self.vif_model is not None:
-            vif_embedding = self.vif_model(tab_data)
+        if self.pca_model is not None:
+            pca_embedding = self.pca_model(tab_data)
         else:
-            vif_embedding = tab_data
+            pca_embedding = tab_data
         tab_embedding, tab_pred = self.mlp(tab_data)
-        z = self.encode(x, tab_embedding, vif_embedding)
-        recon_x = self.decode(z, tab_embedding, vif_embedding)
+        z = self.encode(x, tab_embedding, pca_embedding)
+        recon_x = self.decode(z, tab_embedding, pca_embedding)
         img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28))
         alpha = self.gate(torch.cat([tab_embedding, img_pred], dim=1))
         fused_pred = alpha * img_pred + (1 - alpha) * tab_pred
