@@ -424,26 +424,30 @@ def main():
         # Check if already processed
         if args.skip_existing:
             dataset_name = dataset_path.parent.name
+            os.makedirs(subdirs['logs'], exist_ok=True)   # NEW
             progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
             already_processed = False
-            if os.path.exists(progress_log_path):
-                with open(progress_log_path, 'r') as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            entry = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if entry.get('dataset') == dataset_name and entry.get('status') == 'success':
-                            already_processed = True
-                            break
-
-                if already_processed:
-                    print(f"⏭️  SKIPPED: {dataset_name} (result found in log)")
-                    skipped_count += 1
-                    continue
+            try:                                          # NEW
+                if os.path.exists(progress_log_path):
+                    with open(progress_log_path, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                entry = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if entry.get('dataset') == dataset_name and entry.get('status') == 'success':
+                                already_processed = True
+                                break
+            except OSError as e:                           # NEW
+                print(f"⚠️  Could not read progress log ({e}); proceeding without skip-check")
+        
+            if already_processed:
+                print(f"⏭️  SKIPPED: {dataset_name} (result found in log)")
+                skipped_count += 1
+                continue
         
         # Run dataset
         result = run_single_dataset(
