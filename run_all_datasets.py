@@ -411,9 +411,10 @@ def main():
     
     start_time = time.time()
     
-    for i, dataset_path in enumerate(dataset_files, 1):
+        for i, dataset_path in enumerate(dataset_files, 1):
         elapsed_hours = (time.time() - start_time) / 3600
         remaining = len(dataset_files) - i
+        dataset_name = dataset_path.parent.name
         
         print(f"\n{'='*70}")
         print(f"Progress: {i}/{len(dataset_files)} datasets")
@@ -423,7 +424,6 @@ def main():
         
         # Check if already processed
         if args.skip_existing:
-            dataset_name = dataset_path.parent.name
             os.makedirs(subdirs['logs'], exist_ok=True)   # NEW
             progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
             already_processed = False
@@ -501,10 +501,16 @@ def main():
     print(f"{'='*70}\n")
     
     # Create summary tables
+     
     if success_count > 0:
         print("Creating summary tables...")
-        df = parse_results_jsonl(subdirs)
-        create_summary_tables(df, subdirs, run_dir)
+        try:
+            os.makedirs(subdirs['csv'], exist_ok=True)
+            os.makedirs(subdirs['latex'], exist_ok=True)
+            df = parse_results_jsonl(subdirs)
+            create_summary_tables(df, subdirs, run_dir)
+        except OSError as e:
+            print(f"⚠️  Could not write summary tables: {e}")
     else:
         print("⚠️  No successful results to summarize")
     
