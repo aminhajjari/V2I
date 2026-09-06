@@ -476,11 +476,16 @@ def main():
         except OSError as e:
             print(f"⚠️  Could not write progress log for {dataset_name}: {e}")
         
+
         # Save results to results.jsonl if available
         if result['status'] == 'success' and result.get('results'):
-            results_jsonl_path = os.path.join(subdirs['logs'], 'results.jsonl')
-            with open(results_jsonl_path, 'a') as f:
-                f.write(json.dumps(result['results']) + '\n')
+            try:
+                os.makedirs(subdirs['logs'], exist_ok=True)
+                results_jsonl_path = os.path.join(subdirs['logs'], 'results.jsonl')
+                with open(results_jsonl_path, 'a') as f:
+                    f.write(json.dumps(result['results']) + '\n')
+            except OSError as e:
+                print(f"⚠️  Could not write results.jsonl for {dataset_name}: {e}")
     
     # Final summary
     total_time = time.time() - start_time
