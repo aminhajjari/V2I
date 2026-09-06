@@ -466,10 +466,15 @@ def main():
         else:
             failed_count += 1
         
+        #
         # Save progress log
-        progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
-        with open(progress_log_path, 'a') as f:
-            f.write(json.dumps(result) + '\n')
+        try:
+            os.makedirs(subdirs['logs'], exist_ok=True)
+            progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
+            with open(progress_log_path, 'a') as f:
+                f.write(json.dumps(result) + '\n')
+        except OSError as e:
+            print(f"⚠️  Could not write progress log for {dataset_name}: {e}")
         
         # Save results to results.jsonl if available
         if result['status'] == 'success' and result.get('results'):
