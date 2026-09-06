@@ -342,9 +342,19 @@ def calculate_vif_safe(X_data):
     vif_values = np.clip(vif_values, 1.0, 100.0)
     return vif_values
 
-X_sample = X_train[:min(1000, len(X_train))]
-vif_values = calculate_vif_safe(X_sample)
-print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
+NUM_VIEWS = 3  # number of multi-view VIF branches
+
+vif_values_list = []
+rng = np.random.RandomState(42)
+for view_idx in range(NUM_VIEWS):
+    sample_size = min(1000, len(X_train))
+    view_indices = rng.choice(len(X_train), size=sample_size, replace=True)  # bootstrap
+    X_sample_view = X_train[view_indices]
+    vif_values_view = calculate_vif_safe(X_sample_view)
+    vif_values_list.append(vif_values_view)
+    print(f"[INFO] View {view_idx}: VIF Mean: {vif_values_view.mean():.2f}, Max: {vif_values_view.max():.2f}")
+
+vif_values = vif_values_list[0]  # unchanged variable name, kept for any later prints/checks
 
 print("[INFO] Preparing synchronized image-tabular datasets...")
 train_tabular_label_counts = torch.bincount(train_tabular_dataset.tensors[1], minlength=num_classes)
@@ -480,13 +490,15 @@ class VIFInitialization(nn.Module):
         return x
 
 class CAEWithTabEmbedding(nn.Module):
-    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values=None):
+    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values_list=None):
         super(CAEWithTabEmbedding, self).__init__()
         self.mlp = SimpleMLP(input_dim, tab_latent_size, num_classes)
-        if vif_values is not None:
-            self.vif_model = VIFInitialization(input_dim, vif_values)
+        if vif_values_list is not None and len(vif_values_list) > 0:
+            self.vif_models = nn.ModuleList([
+                VIFInitialization(input_dim, vif_vals) for vif_vals in vif_values_list
+            ])
         else:
-            self.vif_model = None
+            self.vif_models = None
         self.encoder = nn.Sequential(
             nn.Linear(28*28 + tab_latent_size + input_dim, 128),
             nn.ReLU(),
@@ -510,8 +522,9 @@ class CAEWithTabEmbedding(nn.Module):
     def decode(self, z, tab_embedding, vif_embedding):
         return self.decoder(torch.cat([z, tab_embedding, vif_embedding], dim=1))
     def forward(self, x, tab_data):
-        if self.vif_model is not None:
-            vif_embedding = self.vif_model(tab_data)
+        if self.vif_models is not None:
+            view_embeddings = [vif_model(tab_data) for vif_model in self.vif_models]
+            vif_embedding = torch.stack(view_embeddings, dim=0).mean(dim=0)
         else:
             vif_embedding = tab_data
         tab_embedding, tab_pred = self.mlp(tab_data)
@@ -528,7 +541,7 @@ cae = CAEWithTabEmbedding(
     tab_latent_size=tab_latent_size,
     num_classes=num_classes,
     latent_size=8,
-    vif_values=vif_values
+    vif_values_list=vif_values_list
 ).to(DEVICE)
 #optimizer = optim.AdamW(cae.parameters(), lr=0.001, weight_decay=1e-4)
 #optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True, weight_decay=1e-4)
