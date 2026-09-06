@@ -410,24 +410,23 @@ def main():
     skipped_count = 0
     
     start_time = time.time()
-    
-        for i, dataset_path in enumerate(dataset_files, 1):
+    for i, dataset_path in enumerate(dataset_files, 1):
         elapsed_hours = (time.time() - start_time) / 3600
         remaining = len(dataset_files) - i
         dataset_name = dataset_path.parent.name
-        
+
         print(f"\n{'='*70}")
         print(f"Progress: {i}/{len(dataset_files)} datasets")
         print(f"Elapsed: {elapsed_hours:.1f}h | Remaining: ~{remaining * 0.1:.1f}h")
         print(f"✅ {success_count} | ❌ {failed_count} | ⏱️ {timeout_count} | ⏭️ {skipped_count}")
         print(f"{'='*70}")
-        
+
         # Check if already processed
         if args.skip_existing:
-            os.makedirs(subdirs['logs'], exist_ok=True)   # NEW
+            os.makedirs(subdirs['logs'], exist_ok=True)
             progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
             already_processed = False
-            try:                                          # NEW
+            try:
                 if os.path.exists(progress_log_path):
                     with open(progress_log_path, 'r') as f:
                         for line in f:
@@ -441,14 +440,14 @@ def main():
                             if entry.get('dataset') == dataset_name and entry.get('status') == 'success':
                                 already_processed = True
                                 break
-            except OSError as e:                           # NEW
+            except OSError as e:
                 print(f"⚠️  Could not read progress log ({e}); proceeding without skip-check")
-        
+
             if already_processed:
                 print(f"⏭️  SKIPPED: {dataset_name} (result found in log)")
                 skipped_count += 1
                 continue
-        
+
         # Run dataset
         result = run_single_dataset(
             dataset_path=dataset_path,
