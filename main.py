@@ -18,7 +18,8 @@ import argparse
 import os
 import json
 from datetime import datetime
-from sklearn.decomposition import PCA
+
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 import warnings
 import scipy.io.arff as arff
 from tqdm import tqdm
@@ -322,50 +323,28 @@ test_tabular_dataset = TensorDataset(
     torch.tensor(y_test, dtype=torch.long)
 )
 
-print("[INFO] Calculating PCA-based multicollinearity scores...")
-def calculate_pca_collinearity_safe(X_data, variance_threshold=0.95):
-    """
-    PCA-based multicollinearity score per feature (replaces VIF).
-
-    Fits PCA on the standardized feature matrix, keeps just enough
-    components to explain `variance_threshold` of the variance, then
-    scores each feature by how much of its variance sits in the
-    discarded (low-variance / redundant) components. A high score
-    means the feature is mostly explained by directions that carry
-    little independent information -> collinear with other features.
-    """
-    n_features = X_data.shape[1]
-    n_samples = X_data.shape[0]
-    n_components = min(n_features, n_samples)
-
+print("[INFO] Calculating VIF values...")
+def calculate_vif_safe(X_data):
+    df_vif = pd.DataFrame(X_data)
+    n_features = df_vif.shape[1]
+    vif_values = []
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=RuntimeWarning)
-        pca = PCA(n_components=n_components)
-        pca.fit(X_data)
-
-    explained = pca.explained_variance_ratio_
-    cumulative = np.cumsum(explained)
-    n_keep = int(np.searchsorted(cumulative, variance_threshold) + 1)
-    n_keep = min(max(n_keep, 1), n_components)
-
-    loadings = pca.components_               # shape: (n_components, n_features)
-    discarded_var = explained[n_keep:]
-
-    if len(discarded_var) == 0:
-        # everything needed to hit the threshold -> no redundancy signal
-        return np.ones(n_features)
-
-    discarded_loadings = loadings[n_keep:]
-    collinearity_scores = (discarded_loadings ** 2 * discarded_var[:, None]).sum(axis=0)
-
-    # rescale into a VIF-like range: 1.0 = independent, higher = collinear
-    collinearity_scores = collinearity_scores / (collinearity_scores.mean() + 1e-8)
-    collinearity_scores = np.clip(1.0 + collinearity_scores, 1.0, 100.0)
-    return collinearity_scores
+        for i in range(n_features):
+            try:
+                vif = variance_inflation_factor(df_vif.values, i)
+                if np.isnan(vif) or np.isinf(vif):
+                    vif = 1.0
+            except:
+                vif = 1.0
+            vif_values.append(vif)
+    vif_values = np.array(vif_values)
+    vif_values = np.clip(vif_values, 1.0, 100.0)
+    return vif_values
 
 X_sample = X_train[:min(1000, len(X_train))]
-pca_scores = calculate_pca_collinearity_safe(X_sample)
-print(f"[INFO] PCA collinearity scores calculated. Mean: {pca_scores.mean():.2f}, Max: {pca_scores.max():.2f}")
+vif_values = calculate_vif_safe(X_sample)
+print(f"[INFO] VIF calculated. Mean: {vif_values.mean():.2f}, Max: {vif_values.max():.2f}")
 
 print("[INFO] Preparing synchronized image-tabular datasets...")
 train_tabular_label_counts = torch.bincount(train_tabular_dataset.tensors[1], minlength=num_classes)
@@ -481,39 +460,33 @@ class SimpleMLP(nn.Module):
         x = self.fc2(tab_latent)
         return tab_latent, x
 
-class PCAInitialization(nn.Module):
-    """
-    Learnable linear re-weighting of tabular features, initialized from
-    PCA-based collinearity scores instead of VIF. fc1/fc2 still train
-    end-to-end — only the starting weights encode "down-weight collinear
-    features, up-weight independent ones."
-    """
-    def __init__(self, input_dim, pca_scores):
-        super(PCAInitialization, self).__init__()
+class VIFInitialization(nn.Module):
+    def __init__(self, input_dim, vif_values):
+        super(VIFInitialization, self).__init__()
         self.input_dim = input_dim
-        self.pca_scores = pca_scores
+        self.vif_values = vif_values
         self.fc1 = nn.Linear(input_dim, input_dim + 4)
         self.fc2 = nn.Linear(input_dim + 4, input_dim)
-        pca_tensor = torch.tensor(pca_scores, dtype=torch.float32)
-        pca_tensor = pca_tensor / (pca_tensor.mean() + 1e-6)
-        inv_collinearity = 1.0 / torch.clamp(pca_tensor, min=1.0)
+        vif_tensor = torch.tensor(vif_values, dtype=torch.float32)
+        vif_tensor = vif_tensor / (vif_tensor.mean() + 1e-6)
+        inv_vif = 1.0 / torch.clamp(vif_tensor, min=1.0)
         with torch.no_grad():
             for i in range(self.fc1.weight.data.shape[0]):
-                self.fc1.weight.data[i, :] = inv_collinearity[i % len(inv_collinearity)] / (self.input_dim + 4)
-        print("[INFO] PCA-based weight initialization complete.")
+                self.fc1.weight.data[i, :] = inv_vif[i % len(inv_vif)] / (self.input_dim + 4)
+        print("[INFO] VIF-based weight initialization complete.")
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         return x
 
 class CAEWithTabEmbedding(nn.Module):
-    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, pca_scores=None):
+    def __init__(self, input_dim, tab_latent_size, num_classes, latent_size=8, vif_values=None):
         super(CAEWithTabEmbedding, self).__init__()
         self.mlp = SimpleMLP(input_dim, tab_latent_size, num_classes)
-        if pca_scores is not None:
-            self.pca_model = PCAInitialization(input_dim, pca_scores)
+        if vif_values is not None:
+            self.vif_model = VIFInitialization(input_dim, vif_values)
         else:
-            self.pca_model = None
+            self.vif_model = None
         self.encoder = nn.Sequential(
             nn.Linear(28*28 + tab_latent_size + input_dim, 128),
             nn.ReLU(),
@@ -532,18 +505,18 @@ class CAEWithTabEmbedding(nn.Module):
             nn.Linear(32, 1),
             nn.Sigmoid()
         )
-    def encode(self, x, tab_embedding, pca_embedding):
-        return self.encoder(torch.cat([x, tab_embedding, pca_embedding], dim=1))
-    def decode(self, z, tab_embedding, pca_embedding):
-        return self.decoder(torch.cat([z, tab_embedding, pca_embedding], dim=1))
+    def encode(self, x, tab_embedding, vif_embedding):
+        return self.encoder(torch.cat([x, tab_embedding, vif_embedding], dim=1))
+    def decode(self, z, tab_embedding, vif_embedding):
+        return self.decoder(torch.cat([z, tab_embedding, vif_embedding], dim=1))
     def forward(self, x, tab_data):
-        if self.pca_model is not None:
-            pca_embedding = self.pca_model(tab_data)
+        if self.vif_model is not None:
+            vif_embedding = self.vif_model(tab_data)
         else:
-            pca_embedding = tab_data
+            vif_embedding = tab_data
         tab_embedding, tab_pred = self.mlp(tab_data)
-        z = self.encode(x, tab_embedding, pca_embedding)
-        recon_x = self.decode(z, tab_embedding, pca_embedding)
+        z = self.encode(x, tab_embedding, vif_embedding)
+        recon_x = self.decode(z, tab_embedding, vif_embedding)
         img_pred = self.final_classifier(recon_x.view(-1, 1, 28, 28))
         alpha = self.gate(torch.cat([tab_embedding, img_pred], dim=1))
         fused_pred = alpha * img_pred + (1 - alpha) * tab_pred
@@ -555,7 +528,7 @@ cae = CAEWithTabEmbedding(
     tab_latent_size=tab_latent_size,
     num_classes=num_classes,
     latent_size=8,
-    pca_scores=pca_scores
+    vif_values=vif_values
 ).to(DEVICE)
 #optimizer = optim.AdamW(cae.parameters(), lr=0.001, weight_decay=1e-4)
 #optimizer = ADOPT(cae.parameters(), lr=0.001, decouple=True, weight_decay=1e-4)
