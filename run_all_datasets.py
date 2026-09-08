@@ -101,8 +101,9 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
         size_mb = 0
 
     if 'cifar' in dataset_name.lower() or size_mb > 20:
-        print(f"🔧 Large/CIFAR dataset detected ({dataset_name}, {size_mb:.1f}MB) – increasing timeout")
-        effective_timeout = max(timeout, 28800)
+        effective_timeout = max(timeout * 2, timeout + 28800)
+        print(f"🔧 Large/CIFAR dataset detected ({dataset_name}, {size_mb:.1f}MB) – "
+              f"increasing timeout from {timeout}s to {effective_timeout}s")
         
 
     # Build command with per‑dataset num_images
